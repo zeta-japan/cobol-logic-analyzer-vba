@@ -1,0 +1,11 @@
+* text=auto
+
+# VBA exports must keep CRLF so VBE can import them correctly.
+*.bas text eol=crlf
+*.cls text eol=crlf
+*.frm text eol=crlf
+
+# Treat .xlsm as binary
+*.xlsm binary
+*.xlsx binary
+*.xls  binary

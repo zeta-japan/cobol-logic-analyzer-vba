@@ -1,0 +1,2107 @@
+{
+    "summary":  {
+                    "programName":  "SAMPLE01",
+                    "lines":  65,
+                    "branchCount":  8,
+                    "pathCount":  18,
+                    "actionCount":  21,
+                    "sectionCount":  2,
+                    "paragraphCount":  11,
+                    "performThruCount":  1,
+                    "prefixDetected":  false,
+                    "prefixStyle":  "standard",
+                    "prefixRatio":  0,
+                    "encoding":  "cp932",
+                    "generatedAt":  "2026-05-18T21:26:40",
+                    "pathTruncated":  false
+                },
+    "rootNodes":  [
+                      {
+                          "id":  "action-19",
+                          "type":  "action",
+                          "label":  "PERFORM INIT-RTN",
+                          "startLine":  19,
+                          "endLine":  19
+                      },
+                      {
+                          "id":  "action-20",
+                          "type":  "action",
+                          "label":  "PERFORM CHECK-RTN",
+                          "startLine":  20,
+                          "endLine":  20
+                      },
+                      {
+                          "id":  "action-21",
+                          "type":  "action",
+                          "label":  "PERFORM SEARCH-RTN",
+                          "startLine":  21,
+                          "endLine":  21
+                      },
+                      {
+                          "id":  "action-22",
+                          "type":  "action",
+                          "label":  "PERFORM EDIT-RTN THRU EDIT-EXIT",
+                          "startLine":  22,
+                          "endLine":  22
+                      },
+                      {
+                          "id":  "action-23",
+                          "type":  "action",
+                          "label":  "CALL \u0027SUBPGM01\u0027 USING WK-KBN",
+                          "startLine":  23,
+                          "endLine":  23
+                      },
+                      {
+                          "id":  "action-26",
+                          "type":  "action",
+                          "label":  "MOVE ZERO TO WK-AGE",
+                          "startLine":  26,
+                          "endLine":  26
+                      },
+                      {
+                          "id":  "action-27",
+                          "type":  "action",
+                          "label":  "MOVE SPACE TO WK-FLG",
+                          "startLine":  27,
+                          "endLine":  27
+                      },
+                      {
+                          "id":  "if-29",
+                          "type":  "if",
+                          "condition":  "WK-AGE = 0",
+                          "startLine":  29,
+                          "endLine":  38,
+                          "elseLine":  36,
+                          "thenChildren":  [
+                                               {
+                                                   "id":  "if-30",
+                                                   "type":  "if",
+                                                   "condition":  "WK-KBN = \u00271\u0027",
+                                                   "startLine":  30,
+                                                   "endLine":  35,
+                                                   "elseLine":  33,
+                                                   "thenChildren":  [
+                                                                        {
+                                                                            "id":  "action-31",
+                                                                            "type":  "action",
+                                                                            "label":  "MOVE \u0027A\u0027 TO WK-FLG",
+                                                                            "startLine":  31,
+                                                                            "endLine":  31
+                                                                        },
+                                                                        {
+                                                                            "id":  "action-32",
+                                                                            "type":  "action",
+                                                                            "label":  "PERFORM UPDATE-RTN",
+                                                                            "startLine":  32,
+                                                                            "endLine":  32
+                                                                        }
+                                                                    ],
+                                                   "elseChildren":  [
+                                                                        {
+                                                                            "id":  "action-34",
+                                                                            "type":  "action",
+                                                                            "label":  "MOVE \u0027B\u0027 TO WK-FLG",
+                                                                            "startLine":  34,
+                                                                            "endLine":  34
+                                                                        }
+                                                                    ]
+                                               }
+                                           ],
+                          "elseChildren":  [
+                                               {
+                                                   "id":  "action-37",
+                                                   "type":  "action",
+                                                   "label":  "PERFORM SKIP-RTN",
+                                                   "startLine":  37,
+                                                   "endLine":  37
+                                               }
+                                           ]
+                      },
+                      {
+                          "id":  "evaluate-39",
+                          "type":  "evaluate",
+                          "expression":  "WK-KBN",
+                          "startLine":  39,
+                          "endLine":  46,
+                          "cases":  [
+                                        {
+                                            "id":  "when-40",
+                                            "type":  "when",
+                                            "condition":  "\u00271\u0027",
+                                            "startLine":  40,
+                                            "endLine":  40,
+                                            "children":  [
+                                                             {
+                                                                 "id":  "action-41",
+                                                                 "type":  "action",
+                                                                 "label":  "PERFORM PROC-A",
+                                                                 "startLine":  41,
+                                                                 "endLine":  41
+                                                             }
+                                                         ]
+                                        },
+                                        {
+                                            "id":  "when-42",
+                                            "type":  "when",
+                                            "condition":  "\u00272\u0027",
+                                            "startLine":  42,
+                                            "endLine":  42,
+                                            "children":  [
+                                                             {
+                                                                 "id":  "action-43",
+                                                                 "type":  "action",
+                                                                 "label":  "PERFORM PROC-B",
+                                                                 "startLine":  43,
+                                                                 "endLine":  43
+                                                             }
+                                                         ]
+                                        },
+                                        {
+                                            "id":  "when-44",
+                                            "type":  "when",
+                                            "condition":  "OTHER",
+                                            "startLine":  44,
+                                            "endLine":  44,
+                                            "children":  [
+                                                             {
+                                                                 "id":  "action-45",
+                                                                 "type":  "action",
+                                                                 "label":  "PERFORM PROC-OTHER",
+                                                                 "startLine":  45,
+                                                                 "endLine":  45
+                                                             }
+                                                         ]
+                                        }
+                                    ]
+                      },
+                      {
+                          "id":  "search-49",
+                          "type":  "search",
+                          "isAll":  false,
+                          "tableExpr":  "WK-ENT",
+                          "startLine":  49,
+                          "endLine":  54,
+                          "atEndLine":  50,
+                          "atEndChildren":  [
+                                                {
+                                                    "id":  "action-51",
+                                                    "type":  "action",
+                                                    "label":  "MOVE \u0027N\u0027 TO WK-FLG",
+                                                    "startLine":  51,
+                                                    "endLine":  51
+                                                }
+                                            ],
+                          "cases":  [
+                                        {
+                                            "id":  "when-52",
+                                            "type":  "when",
+                                            "condition":  "WK-ENT-CD (WK-I) = IN-CD",
+                                            "startLine":  52,
+                                            "endLine":  52,
+                                            "children":  [
+                                                             {
+                                                                 "id":  "action-53",
+                                                                 "type":  "action",
+                                                                 "label":  "MOVE \u0027Y\u0027 TO WK-FLG",
+                                                                 "startLine":  53,
+                                                                 "endLine":  53
+                                                             }
+                                                         ]
+                                        }
+                                    ]
+                      },
+                      {
+                          "id":  "action-56",
+                          "type":  "action",
+                          "label":  "MOVE \u00279\u0027 TO WK-KBN",
+                          "startLine":  56,
+                          "endLine":  56
+                      },
+                      {
+                          "id":  "action-60",
+                          "type":  "action",
+                          "label":  "MOVE \u0027A\u0027 TO WK-KBN",
+                          "startLine":  60,
+                          "endLine":  60
+                      },
+                      {
+                          "id":  "action-62",
+                          "type":  "action",
+                          "label":  "MOVE \u0027B\u0027 TO WK-KBN",
+                          "startLine":  62,
+                          "endLine":  62
+                      },
+                      {
+                          "id":  "action-64",
+                          "type":  "action",
+                          "label":  "MOVE \u0027X\u0027 TO WK-KBN",
+                          "startLine":  64,
+                          "endLine":  64
+                      },
+                      {
+                          "id":  "action-66",
+                          "type":  "action",
+                          "label":  "MOVE SPACE TO WK-FLG",
+                          "startLine":  66,
+                          "endLine":  66
+                      }
+                  ],
+    "testCases":  [
+                      {
+                          "id":  "P001",
+                          "testCaseId":  "TC-001",
+                          "scenarioName":  "シナリオ1: WK-AGE = 0 / WK-KBN = \u00271\u0027 / \u00271\u0027 / WK-ENT-CD (WK-I) = IN-CD",
+                          "conditions":  [
+                                             "WK-AGE = 0",
+                                             "WK-KBN = \u00271\u0027",
+                                             "\u00271\u0027",
+                                             "WK-ENT-CD (WK-I) = IN-CD"
+                                         ],
+                          "conditionSummary":  "WK-AGE = 0 / WK-KBN = \u00271\u0027 / \u00271\u0027 / WK-ENT-CD (WK-I) = IN-CD",
+                          "actionLabels":  [
+                                               "PERFORM INIT-RTN",
+                                               "PERFORM CHECK-RTN",
+                                               "PERFORM SEARCH-RTN",
+                                               "PERFORM EDIT-RTN THRU EDIT-EXIT",
+                                               "CALL \u0027SUBPGM01\u0027 USING WK-KBN",
+                                               "MOVE ZERO TO WK-AGE",
+                                               "MOVE SPACE TO WK-FLG",
+                                               "MOVE \u0027A\u0027 TO WK-FLG",
+                                               "PERFORM UPDATE-RTN",
+                                               "PERFORM PROC-A",
+                                               "MOVE \u0027Y\u0027 TO WK-FLG",
+                                               "MOVE \u00279\u0027 TO WK-KBN",
+                                               "MOVE \u0027A\u0027 TO WK-KBN",
+                                               "MOVE \u0027B\u0027 TO WK-KBN",
+                                               "MOVE \u0027X\u0027 TO WK-KBN",
+                                               "MOVE SPACE TO WK-FLG"
+                                           ],
+                          "actionLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              31,
+                                              32,
+                                              41,
+                                              53,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "expectedResult":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027A\u0027 TO WK-FLG / PERFORM UPDATE-RTN / PERFORM PROC-A / MOVE \u0027Y\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "inputData":  "WK-AGE = 0 / WK-KBN = \u00271\u0027 / \u00271\u0027 / WK-ENT-CD (WK-I) = IN-CD",
+                          "expectedValue":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027A\u0027 TO WK-FLG / PERFORM UPDATE-RTN / PERFORM PROC-A / MOVE \u0027Y\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "priority":  "高",
+                          "sourceLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              29,
+                                              30,
+                                              31,
+                                              32,
+                                              39,
+                                              40,
+                                              41,
+                                              49,
+                                              52,
+                                              53,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "sourceLineText":  "19, 20, 21, 22, 23, 26, 27, 29, 30, 31, 32, 39, 40, 41, 49, 52, 53, 56, 60, 62, 64, 66",
+                          "branchIds":  [
+                                            "if-29:then",
+                                            "if-30:then",
+                                            "when-40",
+                                            "when-52"
+                                        ]
+                      },
+                      {
+                          "id":  "P002",
+                          "testCaseId":  "TC-002",
+                          "scenarioName":  "シナリオ2: WK-AGE = 0 / WK-KBN = \u00271\u0027 / \u00271\u0027 / AT END (WK-ENT)",
+                          "conditions":  [
+                                             "WK-AGE = 0",
+                                             "WK-KBN = \u00271\u0027",
+                                             "\u00271\u0027",
+                                             "AT END (WK-ENT)"
+                                         ],
+                          "conditionSummary":  "WK-AGE = 0 / WK-KBN = \u00271\u0027 / \u00271\u0027 / AT END (WK-ENT)",
+                          "actionLabels":  [
+                                               "PERFORM INIT-RTN",
+                                               "PERFORM CHECK-RTN",
+                                               "PERFORM SEARCH-RTN",
+                                               "PERFORM EDIT-RTN THRU EDIT-EXIT",
+                                               "CALL \u0027SUBPGM01\u0027 USING WK-KBN",
+                                               "MOVE ZERO TO WK-AGE",
+                                               "MOVE SPACE TO WK-FLG",
+                                               "MOVE \u0027A\u0027 TO WK-FLG",
+                                               "PERFORM UPDATE-RTN",
+                                               "PERFORM PROC-A",
+                                               "MOVE \u0027N\u0027 TO WK-FLG",
+                                               "MOVE \u00279\u0027 TO WK-KBN",
+                                               "MOVE \u0027A\u0027 TO WK-KBN",
+                                               "MOVE \u0027B\u0027 TO WK-KBN",
+                                               "MOVE \u0027X\u0027 TO WK-KBN",
+                                               "MOVE SPACE TO WK-FLG"
+                                           ],
+                          "actionLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              31,
+                                              32,
+                                              41,
+                                              51,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "expectedResult":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027A\u0027 TO WK-FLG / PERFORM UPDATE-RTN / PERFORM PROC-A / MOVE \u0027N\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "inputData":  "WK-AGE = 0 / WK-KBN = \u00271\u0027 / \u00271\u0027 / AT END (WK-ENT)",
+                          "expectedValue":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027A\u0027 TO WK-FLG / PERFORM UPDATE-RTN / PERFORM PROC-A / MOVE \u0027N\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "priority":  "中",
+                          "sourceLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              29,
+                                              30,
+                                              31,
+                                              32,
+                                              39,
+                                              40,
+                                              41,
+                                              49,
+                                              51,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "sourceLineText":  "19, 20, 21, 22, 23, 26, 27, 29, 30, 31, 32, 39, 40, 41, 49, 51, 56, 60, 62, 64, 66",
+                          "branchIds":  [
+                                            "if-29:then",
+                                            "if-30:then",
+                                            "when-40",
+                                            "search-49:atend"
+                                        ]
+                      },
+                      {
+                          "id":  "P003",
+                          "testCaseId":  "TC-003",
+                          "scenarioName":  "シナリオ3: WK-AGE = 0 / WK-KBN = \u00271\u0027 / \u00272\u0027 / WK-ENT-CD (WK-I) = IN-CD",
+                          "conditions":  [
+                                             "WK-AGE = 0",
+                                             "WK-KBN = \u00271\u0027",
+                                             "\u00272\u0027",
+                                             "WK-ENT-CD (WK-I) = IN-CD"
+                                         ],
+                          "conditionSummary":  "WK-AGE = 0 / WK-KBN = \u00271\u0027 / \u00272\u0027 / WK-ENT-CD (WK-I) = IN-CD",
+                          "actionLabels":  [
+                                               "PERFORM INIT-RTN",
+                                               "PERFORM CHECK-RTN",
+                                               "PERFORM SEARCH-RTN",
+                                               "PERFORM EDIT-RTN THRU EDIT-EXIT",
+                                               "CALL \u0027SUBPGM01\u0027 USING WK-KBN",
+                                               "MOVE ZERO TO WK-AGE",
+                                               "MOVE SPACE TO WK-FLG",
+                                               "MOVE \u0027A\u0027 TO WK-FLG",
+                                               "PERFORM UPDATE-RTN",
+                                               "PERFORM PROC-B",
+                                               "MOVE \u0027Y\u0027 TO WK-FLG",
+                                               "MOVE \u00279\u0027 TO WK-KBN",
+                                               "MOVE \u0027A\u0027 TO WK-KBN",
+                                               "MOVE \u0027B\u0027 TO WK-KBN",
+                                               "MOVE \u0027X\u0027 TO WK-KBN",
+                                               "MOVE SPACE TO WK-FLG"
+                                           ],
+                          "actionLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              31,
+                                              32,
+                                              43,
+                                              53,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "expectedResult":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027A\u0027 TO WK-FLG / PERFORM UPDATE-RTN / PERFORM PROC-B / MOVE \u0027Y\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "inputData":  "WK-AGE = 0 / WK-KBN = \u00271\u0027 / \u00272\u0027 / WK-ENT-CD (WK-I) = IN-CD",
+                          "expectedValue":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027A\u0027 TO WK-FLG / PERFORM UPDATE-RTN / PERFORM PROC-B / MOVE \u0027Y\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "priority":  "中",
+                          "sourceLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              29,
+                                              30,
+                                              31,
+                                              32,
+                                              39,
+                                              42,
+                                              43,
+                                              49,
+                                              52,
+                                              53,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "sourceLineText":  "19, 20, 21, 22, 23, 26, 27, 29, 30, 31, 32, 39, 42, 43, 49, 52, 53, 56, 60, 62, 64, 66",
+                          "branchIds":  [
+                                            "if-29:then",
+                                            "if-30:then",
+                                            "when-42",
+                                            "when-52"
+                                        ]
+                      },
+                      {
+                          "id":  "P004",
+                          "testCaseId":  "TC-004",
+                          "scenarioName":  "シナリオ4: WK-AGE = 0 / WK-KBN = \u00271\u0027 / \u00272\u0027 / AT END (WK-ENT)",
+                          "conditions":  [
+                                             "WK-AGE = 0",
+                                             "WK-KBN = \u00271\u0027",
+                                             "\u00272\u0027",
+                                             "AT END (WK-ENT)"
+                                         ],
+                          "conditionSummary":  "WK-AGE = 0 / WK-KBN = \u00271\u0027 / \u00272\u0027 / AT END (WK-ENT)",
+                          "actionLabels":  [
+                                               "PERFORM INIT-RTN",
+                                               "PERFORM CHECK-RTN",
+                                               "PERFORM SEARCH-RTN",
+                                               "PERFORM EDIT-RTN THRU EDIT-EXIT",
+                                               "CALL \u0027SUBPGM01\u0027 USING WK-KBN",
+                                               "MOVE ZERO TO WK-AGE",
+                                               "MOVE SPACE TO WK-FLG",
+                                               "MOVE \u0027A\u0027 TO WK-FLG",
+                                               "PERFORM UPDATE-RTN",
+                                               "PERFORM PROC-B",
+                                               "MOVE \u0027N\u0027 TO WK-FLG",
+                                               "MOVE \u00279\u0027 TO WK-KBN",
+                                               "MOVE \u0027A\u0027 TO WK-KBN",
+                                               "MOVE \u0027B\u0027 TO WK-KBN",
+                                               "MOVE \u0027X\u0027 TO WK-KBN",
+                                               "MOVE SPACE TO WK-FLG"
+                                           ],
+                          "actionLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              31,
+                                              32,
+                                              43,
+                                              51,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "expectedResult":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027A\u0027 TO WK-FLG / PERFORM UPDATE-RTN / PERFORM PROC-B / MOVE \u0027N\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "inputData":  "WK-AGE = 0 / WK-KBN = \u00271\u0027 / \u00272\u0027 / AT END (WK-ENT)",
+                          "expectedValue":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027A\u0027 TO WK-FLG / PERFORM UPDATE-RTN / PERFORM PROC-B / MOVE \u0027N\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "priority":  "中",
+                          "sourceLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              29,
+                                              30,
+                                              31,
+                                              32,
+                                              39,
+                                              42,
+                                              43,
+                                              49,
+                                              51,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "sourceLineText":  "19, 20, 21, 22, 23, 26, 27, 29, 30, 31, 32, 39, 42, 43, 49, 51, 56, 60, 62, 64, 66",
+                          "branchIds":  [
+                                            "if-29:then",
+                                            "if-30:then",
+                                            "when-42",
+                                            "search-49:atend"
+                                        ]
+                      },
+                      {
+                          "id":  "P005",
+                          "testCaseId":  "TC-005",
+                          "scenarioName":  "シナリオ5: WK-AGE = 0 / WK-KBN = \u00271\u0027 / OTHER / WK-ENT-CD (WK-I) = IN-CD",
+                          "conditions":  [
+                                             "WK-AGE = 0",
+                                             "WK-KBN = \u00271\u0027",
+                                             "OTHER",
+                                             "WK-ENT-CD (WK-I) = IN-CD"
+                                         ],
+                          "conditionSummary":  "WK-AGE = 0 / WK-KBN = \u00271\u0027 / OTHER / WK-ENT-CD (WK-I) = IN-CD",
+                          "actionLabels":  [
+                                               "PERFORM INIT-RTN",
+                                               "PERFORM CHECK-RTN",
+                                               "PERFORM SEARCH-RTN",
+                                               "PERFORM EDIT-RTN THRU EDIT-EXIT",
+                                               "CALL \u0027SUBPGM01\u0027 USING WK-KBN",
+                                               "MOVE ZERO TO WK-AGE",
+                                               "MOVE SPACE TO WK-FLG",
+                                               "MOVE \u0027A\u0027 TO WK-FLG",
+                                               "PERFORM UPDATE-RTN",
+                                               "PERFORM PROC-OTHER",
+                                               "MOVE \u0027Y\u0027 TO WK-FLG",
+                                               "MOVE \u00279\u0027 TO WK-KBN",
+                                               "MOVE \u0027A\u0027 TO WK-KBN",
+                                               "MOVE \u0027B\u0027 TO WK-KBN",
+                                               "MOVE \u0027X\u0027 TO WK-KBN",
+                                               "MOVE SPACE TO WK-FLG"
+                                           ],
+                          "actionLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              31,
+                                              32,
+                                              45,
+                                              53,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "expectedResult":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027A\u0027 TO WK-FLG / PERFORM UPDATE-RTN / PERFORM PROC-OTHER / MOVE \u0027Y\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "inputData":  "WK-AGE = 0 / WK-KBN = \u00271\u0027 / OTHER / WK-ENT-CD (WK-I) = IN-CD",
+                          "expectedValue":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027A\u0027 TO WK-FLG / PERFORM UPDATE-RTN / PERFORM PROC-OTHER / MOVE \u0027Y\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "priority":  "中",
+                          "sourceLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              29,
+                                              30,
+                                              31,
+                                              32,
+                                              39,
+                                              44,
+                                              45,
+                                              49,
+                                              52,
+                                              53,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "sourceLineText":  "19, 20, 21, 22, 23, 26, 27, 29, 30, 31, 32, 39, 44, 45, 49, 52, 53, 56, 60, 62, 64, 66",
+                          "branchIds":  [
+                                            "if-29:then",
+                                            "if-30:then",
+                                            "when-44",
+                                            "when-52"
+                                        ]
+                      },
+                      {
+                          "id":  "P006",
+                          "testCaseId":  "TC-006",
+                          "scenarioName":  "シナリオ6: WK-AGE = 0 / WK-KBN = \u00271\u0027 / OTHER / AT END (WK-ENT)",
+                          "conditions":  [
+                                             "WK-AGE = 0",
+                                             "WK-KBN = \u00271\u0027",
+                                             "OTHER",
+                                             "AT END (WK-ENT)"
+                                         ],
+                          "conditionSummary":  "WK-AGE = 0 / WK-KBN = \u00271\u0027 / OTHER / AT END (WK-ENT)",
+                          "actionLabels":  [
+                                               "PERFORM INIT-RTN",
+                                               "PERFORM CHECK-RTN",
+                                               "PERFORM SEARCH-RTN",
+                                               "PERFORM EDIT-RTN THRU EDIT-EXIT",
+                                               "CALL \u0027SUBPGM01\u0027 USING WK-KBN",
+                                               "MOVE ZERO TO WK-AGE",
+                                               "MOVE SPACE TO WK-FLG",
+                                               "MOVE \u0027A\u0027 TO WK-FLG",
+                                               "PERFORM UPDATE-RTN",
+                                               "PERFORM PROC-OTHER",
+                                               "MOVE \u0027N\u0027 TO WK-FLG",
+                                               "MOVE \u00279\u0027 TO WK-KBN",
+                                               "MOVE \u0027A\u0027 TO WK-KBN",
+                                               "MOVE \u0027B\u0027 TO WK-KBN",
+                                               "MOVE \u0027X\u0027 TO WK-KBN",
+                                               "MOVE SPACE TO WK-FLG"
+                                           ],
+                          "actionLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              31,
+                                              32,
+                                              45,
+                                              51,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "expectedResult":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027A\u0027 TO WK-FLG / PERFORM UPDATE-RTN / PERFORM PROC-OTHER / MOVE \u0027N\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "inputData":  "WK-AGE = 0 / WK-KBN = \u00271\u0027 / OTHER / AT END (WK-ENT)",
+                          "expectedValue":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027A\u0027 TO WK-FLG / PERFORM UPDATE-RTN / PERFORM PROC-OTHER / MOVE \u0027N\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "priority":  "中",
+                          "sourceLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              29,
+                                              30,
+                                              31,
+                                              32,
+                                              39,
+                                              44,
+                                              45,
+                                              49,
+                                              51,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "sourceLineText":  "19, 20, 21, 22, 23, 26, 27, 29, 30, 31, 32, 39, 44, 45, 49, 51, 56, 60, 62, 64, 66",
+                          "branchIds":  [
+                                            "if-29:then",
+                                            "if-30:then",
+                                            "when-44",
+                                            "search-49:atend"
+                                        ]
+                      },
+                      {
+                          "id":  "P007",
+                          "testCaseId":  "TC-007",
+                          "scenarioName":  "シナリオ7: WK-AGE = 0 / NOT (WK-KBN = \u00271\u0027) / \u00271\u0027 / WK-ENT-CD (WK-I) = IN-CD",
+                          "conditions":  [
+                                             "WK-AGE = 0",
+                                             "NOT (WK-KBN = \u00271\u0027)",
+                                             "\u00271\u0027",
+                                             "WK-ENT-CD (WK-I) = IN-CD"
+                                         ],
+                          "conditionSummary":  "WK-AGE = 0 / NOT (WK-KBN = \u00271\u0027) / \u00271\u0027 / WK-ENT-CD (WK-I) = IN-CD",
+                          "actionLabels":  [
+                                               "PERFORM INIT-RTN",
+                                               "PERFORM CHECK-RTN",
+                                               "PERFORM SEARCH-RTN",
+                                               "PERFORM EDIT-RTN THRU EDIT-EXIT",
+                                               "CALL \u0027SUBPGM01\u0027 USING WK-KBN",
+                                               "MOVE ZERO TO WK-AGE",
+                                               "MOVE SPACE TO WK-FLG",
+                                               "MOVE \u0027B\u0027 TO WK-FLG",
+                                               "PERFORM PROC-A",
+                                               "MOVE \u0027Y\u0027 TO WK-FLG",
+                                               "MOVE \u00279\u0027 TO WK-KBN",
+                                               "MOVE \u0027A\u0027 TO WK-KBN",
+                                               "MOVE \u0027B\u0027 TO WK-KBN",
+                                               "MOVE \u0027X\u0027 TO WK-KBN",
+                                               "MOVE SPACE TO WK-FLG"
+                                           ],
+                          "actionLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              34,
+                                              41,
+                                              53,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "expectedResult":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027B\u0027 TO WK-FLG / PERFORM PROC-A / MOVE \u0027Y\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "inputData":  "WK-AGE = 0 / NOT (WK-KBN = \u00271\u0027) / \u00271\u0027 / WK-ENT-CD (WK-I) = IN-CD",
+                          "expectedValue":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027B\u0027 TO WK-FLG / PERFORM PROC-A / MOVE \u0027Y\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "priority":  "中",
+                          "sourceLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              29,
+                                              30,
+                                              34,
+                                              39,
+                                              40,
+                                              41,
+                                              49,
+                                              52,
+                                              53,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "sourceLineText":  "19, 20, 21, 22, 23, 26, 27, 29, 30, 34, 39, 40, 41, 49, 52, 53, 56, 60, 62, 64, 66",
+                          "branchIds":  [
+                                            "if-29:then",
+                                            "if-30:else",
+                                            "when-40",
+                                            "when-52"
+                                        ]
+                      },
+                      {
+                          "id":  "P008",
+                          "testCaseId":  "TC-008",
+                          "scenarioName":  "シナリオ8: WK-AGE = 0 / NOT (WK-KBN = \u00271\u0027) / \u00271\u0027 / AT END (WK-ENT)",
+                          "conditions":  [
+                                             "WK-AGE = 0",
+                                             "NOT (WK-KBN = \u00271\u0027)",
+                                             "\u00271\u0027",
+                                             "AT END (WK-ENT)"
+                                         ],
+                          "conditionSummary":  "WK-AGE = 0 / NOT (WK-KBN = \u00271\u0027) / \u00271\u0027 / AT END (WK-ENT)",
+                          "actionLabels":  [
+                                               "PERFORM INIT-RTN",
+                                               "PERFORM CHECK-RTN",
+                                               "PERFORM SEARCH-RTN",
+                                               "PERFORM EDIT-RTN THRU EDIT-EXIT",
+                                               "CALL \u0027SUBPGM01\u0027 USING WK-KBN",
+                                               "MOVE ZERO TO WK-AGE",
+                                               "MOVE SPACE TO WK-FLG",
+                                               "MOVE \u0027B\u0027 TO WK-FLG",
+                                               "PERFORM PROC-A",
+                                               "MOVE \u0027N\u0027 TO WK-FLG",
+                                               "MOVE \u00279\u0027 TO WK-KBN",
+                                               "MOVE \u0027A\u0027 TO WK-KBN",
+                                               "MOVE \u0027B\u0027 TO WK-KBN",
+                                               "MOVE \u0027X\u0027 TO WK-KBN",
+                                               "MOVE SPACE TO WK-FLG"
+                                           ],
+                          "actionLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              34,
+                                              41,
+                                              51,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "expectedResult":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027B\u0027 TO WK-FLG / PERFORM PROC-A / MOVE \u0027N\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "inputData":  "WK-AGE = 0 / NOT (WK-KBN = \u00271\u0027) / \u00271\u0027 / AT END (WK-ENT)",
+                          "expectedValue":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027B\u0027 TO WK-FLG / PERFORM PROC-A / MOVE \u0027N\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "priority":  "中",
+                          "sourceLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              29,
+                                              30,
+                                              34,
+                                              39,
+                                              40,
+                                              41,
+                                              49,
+                                              51,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "sourceLineText":  "19, 20, 21, 22, 23, 26, 27, 29, 30, 34, 39, 40, 41, 49, 51, 56, 60, 62, 64, 66",
+                          "branchIds":  [
+                                            "if-29:then",
+                                            "if-30:else",
+                                            "when-40",
+                                            "search-49:atend"
+                                        ]
+                      },
+                      {
+                          "id":  "P009",
+                          "testCaseId":  "TC-009",
+                          "scenarioName":  "シナリオ9: WK-AGE = 0 / NOT (WK-KBN = \u00271\u0027) / \u00272\u0027 / WK-ENT-CD (WK-I) = IN-CD",
+                          "conditions":  [
+                                             "WK-AGE = 0",
+                                             "NOT (WK-KBN = \u00271\u0027)",
+                                             "\u00272\u0027",
+                                             "WK-ENT-CD (WK-I) = IN-CD"
+                                         ],
+                          "conditionSummary":  "WK-AGE = 0 / NOT (WK-KBN = \u00271\u0027) / \u00272\u0027 / WK-ENT-CD (WK-I) = IN-CD",
+                          "actionLabels":  [
+                                               "PERFORM INIT-RTN",
+                                               "PERFORM CHECK-RTN",
+                                               "PERFORM SEARCH-RTN",
+                                               "PERFORM EDIT-RTN THRU EDIT-EXIT",
+                                               "CALL \u0027SUBPGM01\u0027 USING WK-KBN",
+                                               "MOVE ZERO TO WK-AGE",
+                                               "MOVE SPACE TO WK-FLG",
+                                               "MOVE \u0027B\u0027 TO WK-FLG",
+                                               "PERFORM PROC-B",
+                                               "MOVE \u0027Y\u0027 TO WK-FLG",
+                                               "MOVE \u00279\u0027 TO WK-KBN",
+                                               "MOVE \u0027A\u0027 TO WK-KBN",
+                                               "MOVE \u0027B\u0027 TO WK-KBN",
+                                               "MOVE \u0027X\u0027 TO WK-KBN",
+                                               "MOVE SPACE TO WK-FLG"
+                                           ],
+                          "actionLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              34,
+                                              43,
+                                              53,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "expectedResult":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027B\u0027 TO WK-FLG / PERFORM PROC-B / MOVE \u0027Y\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "inputData":  "WK-AGE = 0 / NOT (WK-KBN = \u00271\u0027) / \u00272\u0027 / WK-ENT-CD (WK-I) = IN-CD",
+                          "expectedValue":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027B\u0027 TO WK-FLG / PERFORM PROC-B / MOVE \u0027Y\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "priority":  "中",
+                          "sourceLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              29,
+                                              30,
+                                              34,
+                                              39,
+                                              42,
+                                              43,
+                                              49,
+                                              52,
+                                              53,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "sourceLineText":  "19, 20, 21, 22, 23, 26, 27, 29, 30, 34, 39, 42, 43, 49, 52, 53, 56, 60, 62, 64, 66",
+                          "branchIds":  [
+                                            "if-29:then",
+                                            "if-30:else",
+                                            "when-42",
+                                            "when-52"
+                                        ]
+                      },
+                      {
+                          "id":  "P010",
+                          "testCaseId":  "TC-010",
+                          "scenarioName":  "シナリオ10: WK-AGE = 0 / NOT (WK-KBN = \u00271\u0027) / \u00272\u0027 / AT END (WK-ENT)",
+                          "conditions":  [
+                                             "WK-AGE = 0",
+                                             "NOT (WK-KBN = \u00271\u0027)",
+                                             "\u00272\u0027",
+                                             "AT END (WK-ENT)"
+                                         ],
+                          "conditionSummary":  "WK-AGE = 0 / NOT (WK-KBN = \u00271\u0027) / \u00272\u0027 / AT END (WK-ENT)",
+                          "actionLabels":  [
+                                               "PERFORM INIT-RTN",
+                                               "PERFORM CHECK-RTN",
+                                               "PERFORM SEARCH-RTN",
+                                               "PERFORM EDIT-RTN THRU EDIT-EXIT",
+                                               "CALL \u0027SUBPGM01\u0027 USING WK-KBN",
+                                               "MOVE ZERO TO WK-AGE",
+                                               "MOVE SPACE TO WK-FLG",
+                                               "MOVE \u0027B\u0027 TO WK-FLG",
+                                               "PERFORM PROC-B",
+                                               "MOVE \u0027N\u0027 TO WK-FLG",
+                                               "MOVE \u00279\u0027 TO WK-KBN",
+                                               "MOVE \u0027A\u0027 TO WK-KBN",
+                                               "MOVE \u0027B\u0027 TO WK-KBN",
+                                               "MOVE \u0027X\u0027 TO WK-KBN",
+                                               "MOVE SPACE TO WK-FLG"
+                                           ],
+                          "actionLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              34,
+                                              43,
+                                              51,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "expectedResult":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027B\u0027 TO WK-FLG / PERFORM PROC-B / MOVE \u0027N\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "inputData":  "WK-AGE = 0 / NOT (WK-KBN = \u00271\u0027) / \u00272\u0027 / AT END (WK-ENT)",
+                          "expectedValue":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027B\u0027 TO WK-FLG / PERFORM PROC-B / MOVE \u0027N\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "priority":  "中",
+                          "sourceLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              29,
+                                              30,
+                                              34,
+                                              39,
+                                              42,
+                                              43,
+                                              49,
+                                              51,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "sourceLineText":  "19, 20, 21, 22, 23, 26, 27, 29, 30, 34, 39, 42, 43, 49, 51, 56, 60, 62, 64, 66",
+                          "branchIds":  [
+                                            "if-29:then",
+                                            "if-30:else",
+                                            "when-42",
+                                            "search-49:atend"
+                                        ]
+                      },
+                      {
+                          "id":  "P011",
+                          "testCaseId":  "TC-011",
+                          "scenarioName":  "シナリオ11: WK-AGE = 0 / NOT (WK-KBN = \u00271\u0027) / OTHER / WK-ENT-CD (WK-I) = IN-CD",
+                          "conditions":  [
+                                             "WK-AGE = 0",
+                                             "NOT (WK-KBN = \u00271\u0027)",
+                                             "OTHER",
+                                             "WK-ENT-CD (WK-I) = IN-CD"
+                                         ],
+                          "conditionSummary":  "WK-AGE = 0 / NOT (WK-KBN = \u00271\u0027) / OTHER / WK-ENT-CD (WK-I) = IN-CD",
+                          "actionLabels":  [
+                                               "PERFORM INIT-RTN",
+                                               "PERFORM CHECK-RTN",
+                                               "PERFORM SEARCH-RTN",
+                                               "PERFORM EDIT-RTN THRU EDIT-EXIT",
+                                               "CALL \u0027SUBPGM01\u0027 USING WK-KBN",
+                                               "MOVE ZERO TO WK-AGE",
+                                               "MOVE SPACE TO WK-FLG",
+                                               "MOVE \u0027B\u0027 TO WK-FLG",
+                                               "PERFORM PROC-OTHER",
+                                               "MOVE \u0027Y\u0027 TO WK-FLG",
+                                               "MOVE \u00279\u0027 TO WK-KBN",
+                                               "MOVE \u0027A\u0027 TO WK-KBN",
+                                               "MOVE \u0027B\u0027 TO WK-KBN",
+                                               "MOVE \u0027X\u0027 TO WK-KBN",
+                                               "MOVE SPACE TO WK-FLG"
+                                           ],
+                          "actionLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              34,
+                                              45,
+                                              53,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "expectedResult":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027B\u0027 TO WK-FLG / PERFORM PROC-OTHER / MOVE \u0027Y\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "inputData":  "WK-AGE = 0 / NOT (WK-KBN = \u00271\u0027) / OTHER / WK-ENT-CD (WK-I) = IN-CD",
+                          "expectedValue":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027B\u0027 TO WK-FLG / PERFORM PROC-OTHER / MOVE \u0027Y\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "priority":  "中",
+                          "sourceLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              29,
+                                              30,
+                                              34,
+                                              39,
+                                              44,
+                                              45,
+                                              49,
+                                              52,
+                                              53,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "sourceLineText":  "19, 20, 21, 22, 23, 26, 27, 29, 30, 34, 39, 44, 45, 49, 52, 53, 56, 60, 62, 64, 66",
+                          "branchIds":  [
+                                            "if-29:then",
+                                            "if-30:else",
+                                            "when-44",
+                                            "when-52"
+                                        ]
+                      },
+                      {
+                          "id":  "P012",
+                          "testCaseId":  "TC-012",
+                          "scenarioName":  "シナリオ12: WK-AGE = 0 / NOT (WK-KBN = \u00271\u0027) / OTHER / AT END (WK-ENT)",
+                          "conditions":  [
+                                             "WK-AGE = 0",
+                                             "NOT (WK-KBN = \u00271\u0027)",
+                                             "OTHER",
+                                             "AT END (WK-ENT)"
+                                         ],
+                          "conditionSummary":  "WK-AGE = 0 / NOT (WK-KBN = \u00271\u0027) / OTHER / AT END (WK-ENT)",
+                          "actionLabels":  [
+                                               "PERFORM INIT-RTN",
+                                               "PERFORM CHECK-RTN",
+                                               "PERFORM SEARCH-RTN",
+                                               "PERFORM EDIT-RTN THRU EDIT-EXIT",
+                                               "CALL \u0027SUBPGM01\u0027 USING WK-KBN",
+                                               "MOVE ZERO TO WK-AGE",
+                                               "MOVE SPACE TO WK-FLG",
+                                               "MOVE \u0027B\u0027 TO WK-FLG",
+                                               "PERFORM PROC-OTHER",
+                                               "MOVE \u0027N\u0027 TO WK-FLG",
+                                               "MOVE \u00279\u0027 TO WK-KBN",
+                                               "MOVE \u0027A\u0027 TO WK-KBN",
+                                               "MOVE \u0027B\u0027 TO WK-KBN",
+                                               "MOVE \u0027X\u0027 TO WK-KBN",
+                                               "MOVE SPACE TO WK-FLG"
+                                           ],
+                          "actionLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              34,
+                                              45,
+                                              51,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "expectedResult":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027B\u0027 TO WK-FLG / PERFORM PROC-OTHER / MOVE \u0027N\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "inputData":  "WK-AGE = 0 / NOT (WK-KBN = \u00271\u0027) / OTHER / AT END (WK-ENT)",
+                          "expectedValue":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / MOVE \u0027B\u0027 TO WK-FLG / PERFORM PROC-OTHER / MOVE \u0027N\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "priority":  "中",
+                          "sourceLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              29,
+                                              30,
+                                              34,
+                                              39,
+                                              44,
+                                              45,
+                                              49,
+                                              51,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "sourceLineText":  "19, 20, 21, 22, 23, 26, 27, 29, 30, 34, 39, 44, 45, 49, 51, 56, 60, 62, 64, 66",
+                          "branchIds":  [
+                                            "if-29:then",
+                                            "if-30:else",
+                                            "when-44",
+                                            "search-49:atend"
+                                        ]
+                      },
+                      {
+                          "id":  "P013",
+                          "testCaseId":  "TC-013",
+                          "scenarioName":  "シナリオ13: NOT (WK-AGE = 0) / \u00271\u0027 / WK-ENT-CD (WK-I) = IN-CD",
+                          "conditions":  [
+                                             "NOT (WK-AGE = 0)",
+                                             "\u00271\u0027",
+                                             "WK-ENT-CD (WK-I) = IN-CD"
+                                         ],
+                          "conditionSummary":  "NOT (WK-AGE = 0) / \u00271\u0027 / WK-ENT-CD (WK-I) = IN-CD",
+                          "actionLabels":  [
+                                               "PERFORM INIT-RTN",
+                                               "PERFORM CHECK-RTN",
+                                               "PERFORM SEARCH-RTN",
+                                               "PERFORM EDIT-RTN THRU EDIT-EXIT",
+                                               "CALL \u0027SUBPGM01\u0027 USING WK-KBN",
+                                               "MOVE ZERO TO WK-AGE",
+                                               "MOVE SPACE TO WK-FLG",
+                                               "PERFORM SKIP-RTN",
+                                               "PERFORM PROC-A",
+                                               "MOVE \u0027Y\u0027 TO WK-FLG",
+                                               "MOVE \u00279\u0027 TO WK-KBN",
+                                               "MOVE \u0027A\u0027 TO WK-KBN",
+                                               "MOVE \u0027B\u0027 TO WK-KBN",
+                                               "MOVE \u0027X\u0027 TO WK-KBN",
+                                               "MOVE SPACE TO WK-FLG"
+                                           ],
+                          "actionLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              37,
+                                              41,
+                                              53,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "expectedResult":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / PERFORM SKIP-RTN / PERFORM PROC-A / MOVE \u0027Y\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "inputData":  "NOT (WK-AGE = 0) / \u00271\u0027 / WK-ENT-CD (WK-I) = IN-CD",
+                          "expectedValue":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / PERFORM SKIP-RTN / PERFORM PROC-A / MOVE \u0027Y\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "priority":  "中",
+                          "sourceLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              29,
+                                              37,
+                                              39,
+                                              40,
+                                              41,
+                                              49,
+                                              52,
+                                              53,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "sourceLineText":  "19, 20, 21, 22, 23, 26, 27, 29, 37, 39, 40, 41, 49, 52, 53, 56, 60, 62, 64, 66",
+                          "branchIds":  [
+                                            "if-29:else",
+                                            "when-40",
+                                            "when-52"
+                                        ]
+                      },
+                      {
+                          "id":  "P014",
+                          "testCaseId":  "TC-014",
+                          "scenarioName":  "シナリオ14: NOT (WK-AGE = 0) / \u00271\u0027 / AT END (WK-ENT)",
+                          "conditions":  [
+                                             "NOT (WK-AGE = 0)",
+                                             "\u00271\u0027",
+                                             "AT END (WK-ENT)"
+                                         ],
+                          "conditionSummary":  "NOT (WK-AGE = 0) / \u00271\u0027 / AT END (WK-ENT)",
+                          "actionLabels":  [
+                                               "PERFORM INIT-RTN",
+                                               "PERFORM CHECK-RTN",
+                                               "PERFORM SEARCH-RTN",
+                                               "PERFORM EDIT-RTN THRU EDIT-EXIT",
+                                               "CALL \u0027SUBPGM01\u0027 USING WK-KBN",
+                                               "MOVE ZERO TO WK-AGE",
+                                               "MOVE SPACE TO WK-FLG",
+                                               "PERFORM SKIP-RTN",
+                                               "PERFORM PROC-A",
+                                               "MOVE \u0027N\u0027 TO WK-FLG",
+                                               "MOVE \u00279\u0027 TO WK-KBN",
+                                               "MOVE \u0027A\u0027 TO WK-KBN",
+                                               "MOVE \u0027B\u0027 TO WK-KBN",
+                                               "MOVE \u0027X\u0027 TO WK-KBN",
+                                               "MOVE SPACE TO WK-FLG"
+                                           ],
+                          "actionLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              37,
+                                              41,
+                                              51,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "expectedResult":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / PERFORM SKIP-RTN / PERFORM PROC-A / MOVE \u0027N\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "inputData":  "NOT (WK-AGE = 0) / \u00271\u0027 / AT END (WK-ENT)",
+                          "expectedValue":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / PERFORM SKIP-RTN / PERFORM PROC-A / MOVE \u0027N\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "priority":  "中",
+                          "sourceLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              29,
+                                              37,
+                                              39,
+                                              40,
+                                              41,
+                                              49,
+                                              51,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "sourceLineText":  "19, 20, 21, 22, 23, 26, 27, 29, 37, 39, 40, 41, 49, 51, 56, 60, 62, 64, 66",
+                          "branchIds":  [
+                                            "if-29:else",
+                                            "when-40",
+                                            "search-49:atend"
+                                        ]
+                      },
+                      {
+                          "id":  "P015",
+                          "testCaseId":  "TC-015",
+                          "scenarioName":  "シナリオ15: NOT (WK-AGE = 0) / \u00272\u0027 / WK-ENT-CD (WK-I) = IN-CD",
+                          "conditions":  [
+                                             "NOT (WK-AGE = 0)",
+                                             "\u00272\u0027",
+                                             "WK-ENT-CD (WK-I) = IN-CD"
+                                         ],
+                          "conditionSummary":  "NOT (WK-AGE = 0) / \u00272\u0027 / WK-ENT-CD (WK-I) = IN-CD",
+                          "actionLabels":  [
+                                               "PERFORM INIT-RTN",
+                                               "PERFORM CHECK-RTN",
+                                               "PERFORM SEARCH-RTN",
+                                               "PERFORM EDIT-RTN THRU EDIT-EXIT",
+                                               "CALL \u0027SUBPGM01\u0027 USING WK-KBN",
+                                               "MOVE ZERO TO WK-AGE",
+                                               "MOVE SPACE TO WK-FLG",
+                                               "PERFORM SKIP-RTN",
+                                               "PERFORM PROC-B",
+                                               "MOVE \u0027Y\u0027 TO WK-FLG",
+                                               "MOVE \u00279\u0027 TO WK-KBN",
+                                               "MOVE \u0027A\u0027 TO WK-KBN",
+                                               "MOVE \u0027B\u0027 TO WK-KBN",
+                                               "MOVE \u0027X\u0027 TO WK-KBN",
+                                               "MOVE SPACE TO WK-FLG"
+                                           ],
+                          "actionLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              37,
+                                              43,
+                                              53,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "expectedResult":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / PERFORM SKIP-RTN / PERFORM PROC-B / MOVE \u0027Y\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "inputData":  "NOT (WK-AGE = 0) / \u00272\u0027 / WK-ENT-CD (WK-I) = IN-CD",
+                          "expectedValue":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / PERFORM SKIP-RTN / PERFORM PROC-B / MOVE \u0027Y\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "priority":  "中",
+                          "sourceLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              29,
+                                              37,
+                                              39,
+                                              42,
+                                              43,
+                                              49,
+                                              52,
+                                              53,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "sourceLineText":  "19, 20, 21, 22, 23, 26, 27, 29, 37, 39, 42, 43, 49, 52, 53, 56, 60, 62, 64, 66",
+                          "branchIds":  [
+                                            "if-29:else",
+                                            "when-42",
+                                            "when-52"
+                                        ]
+                      },
+                      {
+                          "id":  "P016",
+                          "testCaseId":  "TC-016",
+                          "scenarioName":  "シナリオ16: NOT (WK-AGE = 0) / \u00272\u0027 / AT END (WK-ENT)",
+                          "conditions":  [
+                                             "NOT (WK-AGE = 0)",
+                                             "\u00272\u0027",
+                                             "AT END (WK-ENT)"
+                                         ],
+                          "conditionSummary":  "NOT (WK-AGE = 0) / \u00272\u0027 / AT END (WK-ENT)",
+                          "actionLabels":  [
+                                               "PERFORM INIT-RTN",
+                                               "PERFORM CHECK-RTN",
+                                               "PERFORM SEARCH-RTN",
+                                               "PERFORM EDIT-RTN THRU EDIT-EXIT",
+                                               "CALL \u0027SUBPGM01\u0027 USING WK-KBN",
+                                               "MOVE ZERO TO WK-AGE",
+                                               "MOVE SPACE TO WK-FLG",
+                                               "PERFORM SKIP-RTN",
+                                               "PERFORM PROC-B",
+                                               "MOVE \u0027N\u0027 TO WK-FLG",
+                                               "MOVE \u00279\u0027 TO WK-KBN",
+                                               "MOVE \u0027A\u0027 TO WK-KBN",
+                                               "MOVE \u0027B\u0027 TO WK-KBN",
+                                               "MOVE \u0027X\u0027 TO WK-KBN",
+                                               "MOVE SPACE TO WK-FLG"
+                                           ],
+                          "actionLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              37,
+                                              43,
+                                              51,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "expectedResult":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / PERFORM SKIP-RTN / PERFORM PROC-B / MOVE \u0027N\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "inputData":  "NOT (WK-AGE = 0) / \u00272\u0027 / AT END (WK-ENT)",
+                          "expectedValue":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / PERFORM SKIP-RTN / PERFORM PROC-B / MOVE \u0027N\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "priority":  "中",
+                          "sourceLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              29,
+                                              37,
+                                              39,
+                                              42,
+                                              43,
+                                              49,
+                                              51,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "sourceLineText":  "19, 20, 21, 22, 23, 26, 27, 29, 37, 39, 42, 43, 49, 51, 56, 60, 62, 64, 66",
+                          "branchIds":  [
+                                            "if-29:else",
+                                            "when-42",
+                                            "search-49:atend"
+                                        ]
+                      },
+                      {
+                          "id":  "P017",
+                          "testCaseId":  "TC-017",
+                          "scenarioName":  "シナリオ17: NOT (WK-AGE = 0) / OTHER / WK-ENT-CD (WK-I) = IN-CD",
+                          "conditions":  [
+                                             "NOT (WK-AGE = 0)",
+                                             "OTHER",
+                                             "WK-ENT-CD (WK-I) = IN-CD"
+                                         ],
+                          "conditionSummary":  "NOT (WK-AGE = 0) / OTHER / WK-ENT-CD (WK-I) = IN-CD",
+                          "actionLabels":  [
+                                               "PERFORM INIT-RTN",
+                                               "PERFORM CHECK-RTN",
+                                               "PERFORM SEARCH-RTN",
+                                               "PERFORM EDIT-RTN THRU EDIT-EXIT",
+                                               "CALL \u0027SUBPGM01\u0027 USING WK-KBN",
+                                               "MOVE ZERO TO WK-AGE",
+                                               "MOVE SPACE TO WK-FLG",
+                                               "PERFORM SKIP-RTN",
+                                               "PERFORM PROC-OTHER",
+                                               "MOVE \u0027Y\u0027 TO WK-FLG",
+                                               "MOVE \u00279\u0027 TO WK-KBN",
+                                               "MOVE \u0027A\u0027 TO WK-KBN",
+                                               "MOVE \u0027B\u0027 TO WK-KBN",
+                                               "MOVE \u0027X\u0027 TO WK-KBN",
+                                               "MOVE SPACE TO WK-FLG"
+                                           ],
+                          "actionLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              37,
+                                              45,
+                                              53,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "expectedResult":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / PERFORM SKIP-RTN / PERFORM PROC-OTHER / MOVE \u0027Y\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "inputData":  "NOT (WK-AGE = 0) / OTHER / WK-ENT-CD (WK-I) = IN-CD",
+                          "expectedValue":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / PERFORM SKIP-RTN / PERFORM PROC-OTHER / MOVE \u0027Y\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "priority":  "中",
+                          "sourceLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              29,
+                                              37,
+                                              39,
+                                              44,
+                                              45,
+                                              49,
+                                              52,
+                                              53,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "sourceLineText":  "19, 20, 21, 22, 23, 26, 27, 29, 37, 39, 44, 45, 49, 52, 53, 56, 60, 62, 64, 66",
+                          "branchIds":  [
+                                            "if-29:else",
+                                            "when-44",
+                                            "when-52"
+                                        ]
+                      },
+                      {
+                          "id":  "P018",
+                          "testCaseId":  "TC-018",
+                          "scenarioName":  "シナリオ18: NOT (WK-AGE = 0) / OTHER / AT END (WK-ENT)",
+                          "conditions":  [
+                                             "NOT (WK-AGE = 0)",
+                                             "OTHER",
+                                             "AT END (WK-ENT)"
+                                         ],
+                          "conditionSummary":  "NOT (WK-AGE = 0) / OTHER / AT END (WK-ENT)",
+                          "actionLabels":  [
+                                               "PERFORM INIT-RTN",
+                                               "PERFORM CHECK-RTN",
+                                               "PERFORM SEARCH-RTN",
+                                               "PERFORM EDIT-RTN THRU EDIT-EXIT",
+                                               "CALL \u0027SUBPGM01\u0027 USING WK-KBN",
+                                               "MOVE ZERO TO WK-AGE",
+                                               "MOVE SPACE TO WK-FLG",
+                                               "PERFORM SKIP-RTN",
+                                               "PERFORM PROC-OTHER",
+                                               "MOVE \u0027N\u0027 TO WK-FLG",
+                                               "MOVE \u00279\u0027 TO WK-KBN",
+                                               "MOVE \u0027A\u0027 TO WK-KBN",
+                                               "MOVE \u0027B\u0027 TO WK-KBN",
+                                               "MOVE \u0027X\u0027 TO WK-KBN",
+                                               "MOVE SPACE TO WK-FLG"
+                                           ],
+                          "actionLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              37,
+                                              45,
+                                              51,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "expectedResult":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / PERFORM SKIP-RTN / PERFORM PROC-OTHER / MOVE \u0027N\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "inputData":  "NOT (WK-AGE = 0) / OTHER / AT END (WK-ENT)",
+                          "expectedValue":  "PERFORM INIT-RTN / PERFORM CHECK-RTN / PERFORM SEARCH-RTN / PERFORM EDIT-RTN THRU EDIT-EXIT / CALL \u0027SUBPGM01\u0027 USING WK-KBN / MOVE ZERO TO WK-AGE / MOVE SPACE TO WK-FLG / PERFORM SKIP-RTN / PERFORM PROC-OTHER / MOVE \u0027N\u0027 TO WK-FLG / MOVE \u00279\u0027 TO WK-KBN / MOVE \u0027A\u0027 TO WK-KBN / MOVE \u0027B\u0027 TO WK-KBN / MOVE \u0027X\u0027 TO WK-KBN / MOVE SPACE TO WK-FLG",
+                          "priority":  "中",
+                          "sourceLines":  [
+                                              19,
+                                              20,
+                                              21,
+                                              22,
+                                              23,
+                                              26,
+                                              27,
+                                              29,
+                                              37,
+                                              39,
+                                              44,
+                                              45,
+                                              49,
+                                              51,
+                                              56,
+                                              60,
+                                              62,
+                                              64,
+                                              66
+                                          ],
+                          "sourceLineText":  "19, 20, 21, 22, 23, 26, 27, 29, 37, 39, 44, 45, 49, 51, 56, 60, 62, 64, 66",
+                          "branchIds":  [
+                                            "if-29:else",
+                                            "when-44",
+                                            "search-49:atend"
+                                        ]
+                      }
+                  ],
+    "coverage":  {
+                     "totalBranches":  9,
+                     "coveredBranches":  9,
+                     "coverageRate":  1,
+                     "branches":  [
+                                      {
+                                          "branchId":  "if-29:then",
+                                          "type":  "if",
+                                          "label":  "WK-AGE = 0 (THEN)",
+                                          "line":  29,
+                                          "covered":  true,
+                                          "byTestCases":  [
+                                                              "TC-001",
+                                                              "TC-002",
+                                                              "TC-003",
+                                                              "TC-004",
+                                                              "TC-005",
+                                                              "TC-006",
+                                                              "TC-007",
+                                                              "TC-008",
+                                                              "TC-009",
+                                                              "TC-010",
+                                                              "TC-011",
+                                                              "TC-012"
+                                                          ]
+                                      },
+                                      {
+                                          "branchId":  "if-29:else",
+                                          "type":  "if",
+                                          "label":  "WK-AGE = 0 (ELSE)",
+                                          "line":  29,
+                                          "covered":  true,
+                                          "byTestCases":  [
+                                                              "TC-013",
+                                                              "TC-014",
+                                                              "TC-015",
+                                                              "TC-016",
+                                                              "TC-017",
+                                                              "TC-018"
+                                                          ]
+                                      },
+                                      {
+                                          "branchId":  "if-30:then",
+                                          "type":  "if",
+                                          "label":  "WK-KBN = \u00271\u0027 (THEN)",
+                                          "line":  30,
+                                          "covered":  true,
+                                          "byTestCases":  [
+                                                              "TC-001",
+                                                              "TC-002",
+                                                              "TC-003",
+                                                              "TC-004",
+                                                              "TC-005",
+                                                              "TC-006"
+                                                          ]
+                                      },
+                                      {
+                                          "branchId":  "if-30:else",
+                                          "type":  "if",
+                                          "label":  "WK-KBN = \u00271\u0027 (ELSE)",
+                                          "line":  30,
+                                          "covered":  true,
+                                          "byTestCases":  [
+                                                              "TC-007",
+                                                              "TC-008",
+                                                              "TC-009",
+                                                              "TC-010",
+                                                              "TC-011",
+                                                              "TC-012"
+                                                          ]
+                                      },
+                                      {
+                                          "branchId":  "when-40",
+                                          "type":  "when",
+                                          "label":  "WHEN \u00271\u0027",
+                                          "line":  40,
+                                          "covered":  true,
+                                          "byTestCases":  [
+                                                              "TC-001",
+                                                              "TC-002",
+                                                              "TC-007",
+                                                              "TC-008",
+                                                              "TC-013",
+                                                              "TC-014"
+                                                          ]
+                                      },
+                                      {
+                                          "branchId":  "when-42",
+                                          "type":  "when",
+                                          "label":  "WHEN \u00272\u0027",
+                                          "line":  42,
+                                          "covered":  true,
+                                          "byTestCases":  [
+                                                              "TC-003",
+                                                              "TC-004",
+                                                              "TC-009",
+                                                              "TC-010",
+                                                              "TC-015",
+                                                              "TC-016"
+                                                          ]
+                                      },
+                                      {
+                                          "branchId":  "when-44",
+                                          "type":  "when",
+                                          "label":  "WHEN OTHER",
+                                          "line":  44,
+                                          "covered":  true,
+                                          "byTestCases":  [
+                                                              "TC-005",
+                                                              "TC-006",
+                                                              "TC-011",
+                                                              "TC-012",
+                                                              "TC-017",
+                                                              "TC-018"
+                                                          ]
+                                      },
+                                      {
+                                          "branchId":  "search-49:atend",
+                                          "type":  "search",
+                                          "label":  "AT END (WK-ENT)",
+                                          "line":  49,
+                                          "covered":  true,
+                                          "byTestCases":  [
+                                                              "TC-002",
+                                                              "TC-004",
+                                                              "TC-006",
+                                                              "TC-008",
+                                                              "TC-010",
+                                                              "TC-012",
+                                                              "TC-014",
+                                                              "TC-016",
+                                                              "TC-018"
+                                                          ]
+                                      },
+                                      {
+                                          "branchId":  "when-52",
+                                          "type":  "when",
+                                          "label":  "WHEN WK-ENT-CD (WK-I) = IN-CD",
+                                          "line":  52,
+                                          "covered":  true,
+                                          "byTestCases":  [
+                                                              "TC-001",
+                                                              "TC-003",
+                                                              "TC-005",
+                                                              "TC-007",
+                                                              "TC-009",
+                                                              "TC-011",
+                                                              "TC-013",
+                                                              "TC-015",
+                                                              "TC-017"
+                                                          ]
+                                      }
+                                  ]
+                 },
+    "callGraph":  {
+                      "nodes":  [
+                                    {
+                                        "name":  "WORKING-STORAGE",
+                                        "kind":  "section",
+                                        "line":  7
+                                    },
+                                    {
+                                        "name":  "MAIN-RTN",
+                                        "kind":  "section",
+                                        "line":  17
+                                    },
+                                    {
+                                        "name":  "MAIN-START",
+                                        "kind":  "paragraph",
+                                        "line":  18
+                                    },
+                                    {
+                                        "name":  "INIT-RTN",
+                                        "kind":  "paragraph",
+                                        "line":  25
+                                    },
+                                    {
+                                        "name":  "CHECK-RTN",
+                                        "kind":  "paragraph",
+                                        "line":  28
+                                    },
+                                    {
+                                        "name":  "SEARCH-RTN",
+                                        "kind":  "paragraph",
+                                        "line":  47
+                                    },
+                                    {
+                                        "name":  "UPDATE-RTN",
+                                        "kind":  "paragraph",
+                                        "line":  55
+                                    },
+                                    {
+                                        "name":  "SKIP-RTN",
+                                        "kind":  "paragraph",
+                                        "line":  57
+                                    },
+                                    {
+                                        "name":  "PROC-A",
+                                        "kind":  "paragraph",
+                                        "line":  59
+                                    },
+                                    {
+                                        "name":  "PROC-B",
+                                        "kind":  "paragraph",
+                                        "line":  61
+                                    },
+                                    {
+                                        "name":  "PROC-OTHER",
+                                        "kind":  "paragraph",
+                                        "line":  63
+                                    },
+                                    {
+                                        "name":  "EDIT-RTN",
+                                        "kind":  "paragraph",
+                                        "line":  65
+                                    },
+                                    {
+                                        "name":  "EDIT-EXIT",
+                                        "kind":  "paragraph",
+                                        "line":  67
+                                    }
+                                ],
+                      "edges":  [
+                                    {
+                                        "from":  "MAIN-START",
+                                        "to":  "INIT-RTN",
+                                        "kind":  "perform",
+                                        "line":  19
+                                    },
+                                    {
+                                        "from":  "MAIN-START",
+                                        "to":  "CHECK-RTN",
+                                        "kind":  "perform",
+                                        "line":  20
+                                    },
+                                    {
+                                        "from":  "MAIN-START",
+                                        "to":  "SEARCH-RTN",
+                                        "kind":  "perform",
+                                        "line":  21
+                                    },
+                                    {
+                                        "from":  "MAIN-START",
+                                        "to":  "EDIT-RTN",
+                                        "kind":  "perform-thru",
+                                        "line":  22
+                                    },
+                                    {
+                                        "from":  "MAIN-START",
+                                        "to":  "SUBPGM01",
+                                        "kind":  "call",
+                                        "line":  23
+                                    },
+                                    {
+                                        "from":  "CHECK-RTN",
+                                        "to":  "UPDATE-RTN",
+                                        "kind":  "perform",
+                                        "line":  32
+                                    },
+                                    {
+                                        "from":  "CHECK-RTN",
+                                        "to":  "SKIP-RTN",
+                                        "kind":  "perform",
+                                        "line":  37
+                                    },
+                                    {
+                                        "from":  "CHECK-RTN",
+                                        "to":  "PROC-A",
+                                        "kind":  "perform",
+                                        "line":  41
+                                    },
+                                    {
+                                        "from":  "CHECK-RTN",
+                                        "to":  "PROC-B",
+                                        "kind":  "perform",
+                                        "line":  43
+                                    },
+                                    {
+                                        "from":  "CHECK-RTN",
+                                        "to":  "PROC-OTHER",
+                                        "kind":  "perform",
+                                        "line":  45
+                                    }
+                                ]
+                  },
+    "programStructure":  {
+                             "sections":  [
+                                              {
+                                                  "name":  "WORKING-STORAGE",
+                                                  "line":  7
+                                              },
+                                              {
+                                                  "name":  "MAIN-RTN",
+                                                  "line":  17
+                                              }
+                                          ],
+                             "paragraphs":  [
+                                                {
+                                                    "name":  "MAIN-START",
+                                                    "line":  18
+                                                },
+                                                {
+                                                    "name":  "INIT-RTN",
+                                                    "line":  25
+                                                },
+                                                {
+                                                    "name":  "CHECK-RTN",
+                                                    "line":  28
+                                                },
+                                                {
+                                                    "name":  "SEARCH-RTN",
+                                                    "line":  47
+                                                },
+                                                {
+                                                    "name":  "UPDATE-RTN",
+                                                    "line":  55
+                                                },
+                                                {
+                                                    "name":  "SKIP-RTN",
+                                                    "line":  57
+                                                },
+                                                {
+                                                    "name":  "PROC-A",
+                                                    "line":  59
+                                                },
+                                                {
+                                                    "name":  "PROC-B",
+                                                    "line":  61
+                                                },
+                                                {
+                                                    "name":  "PROC-OTHER",
+                                                    "line":  63
+                                                },
+                                                {
+                                                    "name":  "EDIT-RTN",
+                                                    "line":  65
+                                                },
+                                                {
+                                                    "name":  "EDIT-EXIT",
+                                                    "line":  67
+                                                }
+                                            ],
+                             "performThruRanges":  [
+                                                       {
+                                                           "from":  "EDIT-RTN",
+                                                           "to":  "EDIT-EXIT",
+                                                           "line":  22
+                                                       }
+                                                   ]
+                         },
+    "warnings":  [
+                     "PERFORM THRU が含まれています。段落範囲候補を構造情報として抽出しています。",
+                     "EVALUATE 条件はWHEN単位で抽出しています。複合条件の排他性はレビュー対象です。",
+                     "SEARCH の WHEN は表データに依存します。テストデータ設計時に表内容の確認が必要です。"
+                 ],
+    "source":  [
+                   "      *================================================================",
+                   "      * SAMPLE01 - COBOL繝ｭ繧ｸ繝・け髫主ｱ､蜿ｯ隕門喧繝・・繝ｫ 讓呎ｺ門ｽ｢蠑上し繝ｳ繝励Ν",
+                   "      *================================================================",
+                   "       IDENTIFICATION DIVISION.",
+                   "       PROGRAM-ID. SAMPLE01.",
+                   "       DATA DIVISION.",
+                   "       WORKING-STORAGE SECTION.",
+                   "       01 WK-AGE         PIC 9(03).",
+                   "       01 WK-KBN         PIC X(01).",
+                   "       01 WK-FLG         PIC X(01).",
+                   "       01 IN-CD          PIC X(02).",
+                   "       01 WK-TBL.",
+                   "          05 WK-ENT OCCURS 5 INDEXED BY WK-I.",
+                   "             10 WK-ENT-CD   PIC X(02).",
+                   "             10 WK-ENT-NM   PIC X(10).",
+                   "       PROCEDURE DIVISION.",
+                   "       MAIN-RTN SECTION.",
+                   "       MAIN-START.",
+                   "           PERFORM INIT-RTN.",
+                   "           PERFORM CHECK-RTN.",
+                   "           PERFORM SEARCH-RTN.",
+                   "           PERFORM EDIT-RTN THRU EDIT-EXIT.",
+                   "           CALL \u0027SUBPGM01\u0027 USING WK-KBN.",
+                   "           STOP RUN.",
+                   "       INIT-RTN.",
+                   "           MOVE ZERO TO WK-AGE.",
+                   "           MOVE SPACE TO WK-FLG.",
+                   "       CHECK-RTN.",
+                   "           IF WK-AGE = 0",
+                   "               IF WK-KBN = \u00271\u0027",
+                   "                   MOVE \u0027A\u0027 TO WK-FLG",
+                   "                   PERFORM UPDATE-RTN",
+                   "               ELSE",
+                   "                   MOVE \u0027B\u0027 TO WK-FLG",
+                   "               END-IF",
+                   "           ELSE",
+                   "               PERFORM SKIP-RTN",
+                   "           END-IF.",
+                   "           EVALUATE WK-KBN",
+                   "               WHEN \u00271\u0027",
+                   "                   PERFORM PROC-A",
+                   "               WHEN \u00272\u0027",
+                   "                   PERFORM PROC-B",
+                   "               WHEN OTHER",
+                   "                   PERFORM PROC-OTHER",
+                   "           END-EVALUATE.",
+                   "       SEARCH-RTN.",
+                   "           SET WK-I TO 1.",
+                   "           SEARCH WK-ENT",
+                   "               AT END",
+                   "                   MOVE \u0027N\u0027 TO WK-FLG",
+                   "               WHEN WK-ENT-CD (WK-I) = IN-CD",
+                   "                   MOVE \u0027Y\u0027 TO WK-FLG",
+                   "           END-SEARCH.",
+                   "       UPDATE-RTN.",
+                   "           MOVE \u00279\u0027 TO WK-KBN.",
+                   "       SKIP-RTN.",
+                   "           CONTINUE.",
+                   "       PROC-A.",
+                   "           MOVE \u0027A\u0027 TO WK-KBN.",
+                   "       PROC-B.",
+                   "           MOVE \u0027B\u0027 TO WK-KBN.",
+                   "       PROC-OTHER.",
+                   "           MOVE \u0027X\u0027 TO WK-KBN.",
+                   "       EDIT-RTN.",
+                   "           MOVE SPACE TO WK-FLG.",
+                   "       EDIT-EXIT.",
+                   "           EXIT."
+               ]
+}

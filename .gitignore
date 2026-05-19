@@ -1,0 +1,25 @@
+# Excel workbooks - excluded until Phase 5 ships a finalized CobolAnalyzer.xlsm.
+# When ready to publish, use `git add -f CobolAnalyzer.xlsm`.
+*.xlsm
+*.xlsx
+*.xlsm.bak
+
+# Excel temp / lock files
+~$*.xlsm
+~$*.xlsx
+
+# Office cache
+.~lock.*
+
+# Backup
+*.swp
+*.bak
+*.orig
+
+# OS
+Thumbs.db
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
