@@ -48,6 +48,10 @@ Public Sub Run_All_Tests()
     Test_Begin
     Log_ "Workbook path: " & ThisWorkbook.path
     Test_Phase1.Run_All
+    Test_Phase2.Run_All
+    Test_Phase3.Run_All
+    Test_Phase4.Run_All
+    Test_Phase5.Run_All
     Test_End
 End Sub
 

@@ -19,6 +19,24 @@ Public Function ReadAllText(ByVal path As String, Optional ByVal charset As Stri
     st.Close
 End Function
 
+' Write a UTF-8 (or other) text file. Used by Main.AnalyzeAndBuild to drop the
+' JSON file that CobolLogicViewer.BuildCobolReport reads back.
+Public Sub WriteAllText(ByVal path As String, ByVal text As String, Optional ByVal charset As String = "utf-8")
+    Dim st As Object
+    Set st = CreateObject("ADODB.Stream")
+    st.Type = 2 ' adTypeText
+    Select Case LCase$(charset)
+        Case "utf-8", "utf8":   st.charset = "utf-8"
+        Case "cp932", "shift_jis", "shift-jis", "sjis": st.charset = "shift_jis"
+        Case "utf-16", "utf-16le", "unicode": st.charset = "unicode"
+        Case Else: st.charset = charset
+    End Select
+    st.Open
+    st.WriteText text
+    st.SaveToFile path, 2 ' adSaveCreateOverWrite
+    st.Close
+End Sub
+
 Private Function ResolveCharset(ByVal path As String, ByVal req As String) As String
     Select Case LCase$(req)
         Case "utf-8", "utf8":                       ResolveCharset = "utf-8"
