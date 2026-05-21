@@ -16,15 +16,16 @@ Public Sub Test_AnalyzeAndBuild_CreatesSheets()
         Exit Sub
     End If
 
+    Dim beforeCount As Long, afterCount As Long, ws As Worksheet
+    For Each ws In ThisWorkbook.Worksheets
+        beforeCount = beforeCount + 1
+    Next ws
+
     Main.AnalyzeAndBuild cblPath
 
-    ' BuildCobolReport creates these 5 sheets (Japanese names).
-    Dim expected As Variant
-    expected = Array(Chr(67) & Chr(79) & Chr(66) & Chr(79) & Chr(76), "COBOL")  ' placeholder list (renderer-defined)
-    Dim ws As Worksheet, sheetCount As Long
-    sheetCount = 0
     For Each ws In ThisWorkbook.Worksheets
-        sheetCount = sheetCount + 1
+        afterCount = afterCount + 1
     Next ws
-    TestRunner.Assert_True (sheetCount >= 5), "workbook has at least 5 sheets after BuildCobolReport (had " & sheetCount & ")"
+    TestRunner.Assert_True (afterCount >= 5), _
+        "workbook has at least 5 sheets after BuildCobolReport (before=" & beforeCount & ", after=" & afterCount & ")"
 End Sub

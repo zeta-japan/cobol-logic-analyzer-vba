@@ -54,19 +54,33 @@ cobol-logic-analyzer-vba/
 
 ---
 
-## Phase 1: ハロー JSON (現状)
+## 使い方
 
-最小プロトタイプ。`samples/input/ICASE1.cbl` を読んでプログラム名と論理行数を JSON 化し A1 に出力する。
+### 解析 + 5 シート描画 (フル機能)
 
-実行:
+VBE のイミディエイトウィンドウで:
 
-- VBE のイミディエイトウィンドウで `Sub_RunHello` を実行
-- 期待出力: `{"summary":{"programName":"ICASE1","lines":NNN,"prefixDetected":true,"prefixStyle":"prefixed","prefixRatio":1}}`
+```
+Main.PickCobolAndBuild
+```
 
-テスト:
+→ ファイル選択ダイアログから `.cbl` を選ぶと、解析結果が 5 シート (COBOLソース / ロジック階層 / テストケース候補 / 分岐カバレッジ / 呼出関係) に出力されます。
 
-- イミディエイトで `Run_All_Tests` を実行
-- 全 Assert が PASS、`TestResults` シートに結果が出る
+もしくは直接パス指定:
+
+```
+Main.AnalyzeAndBuild "C:\path\to\sample.cbl"
+```
+
+副産物として `<input>.vba.logic.json` が入力と同じフォルダに残ります (デバッグ用)。
+
+### 回帰テスト
+
+```
+Run_All_Tests
+```
+
+→ ICASE1 サンプルで各フェーズの主要数値 (branchCount=14, totalBranches=21, pathCount=96, coverage 21/21) を検証。`TestResults` シートにも結果が出ます。
 
 ---
 
@@ -74,12 +88,12 @@ cobol-logic-analyzer-vba/
 
 | Phase | 状態 | 目標 |
 |---|---|---|
-| 1. ハロー JSON | 進行中 | プログラム名 + 行数だけの JSON 出力 |
-| 2. AST + 構造抽出 | 未着手 | `rootNodes` / `programStructure` |
-| 3. 呼出グラフ + カバレッジ枠 | 未着手 | `callGraph` / `coverage.branches` |
-| 4. パス列挙 + テストケース | 未着手 | `testCases` (パス上限 200 で打切) |
-| 5. 5 シート描画 | 未着手 | `CobolLogicViewer.BuildCobolReport` 結合 |
-| 6. UI + 配布 | 未着手 | ワンクリックボタン |
+| 1. ハロー JSON | ✅ 完了 | プログラム名 + 行数だけの JSON 出力 |
+| 2. AST + 構造抽出 | ✅ 完了 | `rootNodes` / `programStructure` |
+| 3. 呼出グラフ + カバレッジ枠 | ✅ 完了 | `callGraph` / `coverage.branches` |
+| 4. パス列挙 + テストケース | ✅ 完了 | `testCases` (パス上限 200 で打切) |
+| 5. 5 シート描画 | ✅ 完了 | `CobolLogicViewer.BuildCobolReport` 結合 |
+| 6. UI + 配布 | 未着手 | ワンクリックボタン + コントロールシート |
 
 ---
 
