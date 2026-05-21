@@ -6,6 +6,9 @@ Attribute VB_Name = "CobolEncoding"
 Option Explicit
 
 Public Function ReadAllText(ByVal path As String, Optional ByVal charset As String = "auto") As String
+    If Len(Dir(path)) = 0 Then
+        Err.Raise 53, "CobolEncoding.ReadAllText", "File not found: " & path
+    End If
     Dim st As Object
     Set st = CreateObject("ADODB.Stream")
     st.Type = 2 ' adTypeText

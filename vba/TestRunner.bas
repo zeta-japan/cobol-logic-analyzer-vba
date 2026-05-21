@@ -46,11 +46,24 @@ End Sub
 
 Public Sub Run_All_Tests()
     Test_Begin
+    Log_ "Workbook path: " & ThisWorkbook.path
     Test_Phase1.Run_All
     Test_End
 End Sub
 
-Private Sub Log_(ByVal line As String)
+' Run one named test sub via Application.Run, catching any unhandled error
+' and converting it to a single [FAIL] line. Lets the rest of the suite run.
+Public Sub Run_One(ByVal testName As String)
+    On Error Resume Next
+    Application.Run testName
+    If Err.Number <> 0 Then
+        Assert_True False, testName & " threw error #" & Err.Number & ": " & Err.Description
+        Err.Clear
+    End If
+    On Error GoTo 0
+End Sub
+
+Public Sub Log_(ByVal line As String)
     Debug.Print line
     If mLog Is Nothing Then Set mLog = New Collection
     mLog.Add line
