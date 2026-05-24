@@ -14,7 +14,7 @@ Public Sub Sub_RunHello()
     cblPath = ThisWorkbook.path & "\samples\input\ICASE1.cbl"
 
     Dim src As String
-    src = CobolEncoding.ReadAllText(cblPath, "auto")
+    src = CobolEncoding.ReadCobolSource(cblPath, "auto")
 
     Dim result As OrderedDict
     Set result = CobolParser.Analyze_Phase1(src)
@@ -32,7 +32,7 @@ Public Sub AnalyzeAndBuild(ByVal cblPath As String)
     End If
 
     Dim src As String
-    src = CobolEncoding.ReadAllText(cblPath, "auto")
+    src = CobolEncoding.ReadCobolSource(cblPath, "auto")
 
     Dim result As OrderedDict
     Set result = CobolParser.Analyze_Full(src, "", "utf-8")

@@ -84,7 +84,7 @@ Public Sub Test_ProgramName_FromIcase1()
         Exit Sub
     End If
     Dim src As String
-    src = CobolEncoding.ReadAllText(cblPath, "auto")
+    src = CobolEncoding.ReadCobolSource(cblPath, "auto")
     Dim result As OrderedDict
     Set result = CobolParser.Analyze_Phase1(src)
     Dim summary As OrderedDict

@@ -5,9 +5,11 @@ Attribute VB_Name = "CobolEncoding"
 
 Option Explicit
 
-Public Function ReadAllText(ByVal path As String, Optional ByVal charset As String = "auto") As String
+' Named ReadCobolSource (not ReadAllText) to avoid colliding with
+' JsonParser.ReadAllText, which CobolLogicViewer calls unqualified.
+Public Function ReadCobolSource(ByVal path As String, Optional ByVal charset As String = "auto") As String
     If Len(Dir(path)) = 0 Then
-        Err.Raise 53, "CobolEncoding.ReadAllText", "File not found: " & path
+        Err.Raise 53, "CobolEncoding.ReadCobolSource", "File not found: " & path
     End If
     Dim st As Object
     Set st = CreateObject("ADODB.Stream")
@@ -15,7 +17,7 @@ Public Function ReadAllText(ByVal path As String, Optional ByVal charset As Stri
     st.charset = ResolveCharset(path, charset)
     st.Open
     st.LoadFromFile path
-    ReadAllText = st.ReadText
+    ReadCobolSource = st.ReadText
     st.Close
 End Function
 

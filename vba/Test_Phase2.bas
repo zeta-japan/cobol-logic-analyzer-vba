@@ -105,7 +105,7 @@ Public Sub Test_ICASE1_StructureCounts()
         Exit Sub
     End If
     Dim src As String
-    src = CobolEncoding.ReadAllText(cblPath, "auto")
+    src = CobolEncoding.ReadCobolSource(cblPath, "auto")
     Dim r As OrderedDict
     Set r = CobolParser.Analyze_Phase2(src)
     Dim s As OrderedDict

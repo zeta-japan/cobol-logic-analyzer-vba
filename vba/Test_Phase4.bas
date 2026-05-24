@@ -62,7 +62,7 @@ Public Sub Test_ICASE1_Full_Counts()
         Exit Sub
     End If
     Dim src As String
-    src = CobolEncoding.ReadAllText(cblPath, "auto")
+    src = CobolEncoding.ReadCobolSource(cblPath, "auto")
     Dim r As OrderedDict
     Set r = CobolParser.Analyze_Full(src)
     Dim s As OrderedDict
@@ -81,7 +81,7 @@ Public Sub Test_ICASE1_Full_Coverage100()
         Exit Sub
     End If
     Dim src As String
-    src = CobolEncoding.ReadAllText(cblPath, "auto")
+    src = CobolEncoding.ReadCobolSource(cblPath, "auto")
     Dim r As OrderedDict
     Set r = CobolParser.Analyze_Full(src)
     Dim cov As OrderedDict
