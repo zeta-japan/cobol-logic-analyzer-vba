@@ -44,39 +44,87 @@ Private Function ResolveCharset(ByVal path As String, ByVal req As String) As St
         Case "utf-8", "utf8":                       ResolveCharset = "utf-8"
         Case "cp932", "shift_jis", "shift-jis", "sjis": ResolveCharset = "shift_jis"
         Case "utf-16", "utf-16le", "unicode":       ResolveCharset = "unicode"
-        Case "auto", "":                            ResolveCharset = DetectCharsetByBom(path)
+        Case "auto", "":                            ResolveCharset = DetectCharset(path)
         Case Else:                                  ResolveCharset = req
     End Select
 End Function
 
-Private Function DetectCharsetByBom(ByVal path As String) As String
-    Dim bin As Object, head As Variant
+' Detect charset from the raw bytes. BOM wins; otherwise validate the byte
+' stream as UTF-8 (COBOL sources here are UTF-8 without BOM). Only if that
+' fails do we fall back to shift_jis (CP932), since misreading UTF-8 Japanese
+' as CP932 lets a comment's trailing newline get swallowed and merges lines.
+Private Function DetectCharset(ByVal path As String) As String
+    Dim bin As Object, bytes() As Byte, raw As Variant
     Set bin = CreateObject("ADODB.Stream")
     bin.Type = 1 ' adTypeBinary
     bin.Open
     bin.LoadFromFile path
-    On Error Resume Next
-    head = bin.Read(4)
-    On Error GoTo 0
+    raw = bin.Read ' adReadAll
     bin.Close
 
-    Dim b0 As Long, b1 As Long, b2 As Long, n As Long
+    Dim n As Long
+    n = -1
     On Error Resume Next
-    n = UBound(head) + 1
+    bytes = raw
+    n = UBound(bytes) + 1
     On Error GoTo 0
+    If n <= 0 Then
+        DetectCharset = "shift_jis"
+        Exit Function
+    End If
+
     If n >= 3 Then
-        b0 = head(0): b1 = head(1): b2 = head(2)
-        If b0 = &HEF And b1 = &HBB And b2 = &HBF Then
-            DetectCharsetByBom = "utf-8"
+        If bytes(0) = &HEF And bytes(1) = &HBB And bytes(2) = &HBF Then
+            DetectCharset = "utf-8"
             Exit Function
         End If
     End If
     If n >= 2 Then
-        b0 = head(0): b1 = head(1)
-        If b0 = &HFF And b1 = &HFE Then
-            DetectCharsetByBom = "unicode"
+        If bytes(0) = &HFF And bytes(1) = &HFE Then
+            DetectCharset = "unicode"
             Exit Function
         End If
     End If
-    DetectCharsetByBom = "shift_jis"
+
+    If IsValidUtf8(bytes, n) Then
+        DetectCharset = "utf-8"
+    Else
+        DetectCharset = "shift_jis"
+    End If
+End Function
+
+' True if the bytes are a well-formed UTF-8 stream. Pure ASCII counts as valid
+' (it decodes identically either way). A genuine shift_jis stream with Japanese
+' fails here because its trail bytes (0x40-0x7E) are not valid UTF-8 continuation
+' bytes (which must be 0x80-0xBF).
+Private Function IsValidUtf8(ByRef b() As Byte, ByVal n As Long) As Boolean
+    Dim i As Long, c As Long, trail As Long, k As Long
+    i = 0
+    Do While i < n
+        c = b(i)
+        If c <= &H7F Then
+            trail = 0
+        ElseIf c >= &HC2 And c <= &HDF Then
+            trail = 1
+        ElseIf c >= &HE0 And c <= &HEF Then
+            trail = 2
+        ElseIf c >= &HF0 And c <= &HF4 Then
+            trail = 3
+        Else
+            IsValidUtf8 = False
+            Exit Function
+        End If
+        For k = 1 To trail
+            If i + k >= n Then
+                IsValidUtf8 = False
+                Exit Function
+            End If
+            If b(i + k) < &H80 Or b(i + k) > &HBF Then
+                IsValidUtf8 = False
+                Exit Function
+            End If
+        Next k
+        i = i + trail + 1
+    Loop
+    IsValidUtf8 = True
 End Function
