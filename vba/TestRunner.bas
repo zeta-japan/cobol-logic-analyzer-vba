@@ -44,6 +44,8 @@ Public Sub Test_End()
     Render_Log
 End Sub
 
+' Fast engine test suite (Phase 1-4). Does NOT render sheets, so it stays
+' quick and does not mutate the workbook. Run this for routine verification.
 Public Sub Run_All_Tests()
     Test_Begin
     Log_ "Workbook path: " & ThisWorkbook.path
@@ -51,6 +53,15 @@ Public Sub Run_All_Tests()
     Test_Phase2.Run_All
     Test_Phase3.Run_All
     Test_Phase4.Run_All
+    Test_End
+End Sub
+
+' Heavy end-to-end test: runs the full pipeline AND renders the 5 sheets via
+' BuildCobolReport. Slower (parses + writes ~100 rows) and adds sheets to the
+' workbook, so it is kept out of Run_All_Tests. Run on demand.
+Public Sub Run_RenderTest()
+    Test_Begin
+    Log_ "Workbook path: " & ThisWorkbook.path
     Test_Phase5.Run_All
     Test_End
 End Sub

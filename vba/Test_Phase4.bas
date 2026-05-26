@@ -7,8 +7,7 @@ Option Explicit
 Public Sub Run_All()
     TestRunner.Run_One "Test_ExpandSequence_LinearActions"
     TestRunner.Run_One "Test_ExpandSequence_IfElse"
-    TestRunner.Run_One "Test_ICASE1_Full_Counts"
-    TestRunner.Run_One "Test_ICASE1_Full_Coverage100"
+    TestRunner.Run_One "Test_ICASE1_Full"
 End Sub
 
 Public Sub Test_ExpandSequence_LinearActions()
@@ -54,7 +53,9 @@ Public Sub Test_ExpandSequence_IfElse()
     TestRunner.Assert_Equal CLng(2), CLng(states.Count), "IF/ELSE -> 2 paths"
 End Sub
 
-Public Sub Test_ICASE1_Full_Counts()
+' One Analyze_Full call, all the ICASE1 assertions (avoids enumerating the
+' 96 paths more than once per suite run).
+Public Sub Test_ICASE1_Full()
     Dim cblPath As String
     cblPath = ThisWorkbook.path & "\samples\input\ICASE1.cbl"
     If Len(Dir(cblPath)) = 0 Then
@@ -65,27 +66,13 @@ Public Sub Test_ICASE1_Full_Counts()
     src = CobolEncoding.ReadCobolSource(cblPath, "auto")
     Dim r As OrderedDict
     Set r = CobolParser.Analyze_Full(src)
-    Dim s As OrderedDict
+    Dim s As OrderedDict, cov As OrderedDict
     Set s = r.Item("summary")
-    ' Golden ICASE1: pathCount=96
+    Set cov = r.Item("coverage")
+    ' Golden ICASE1: pathCount=96, coverage 21/21.
     TestRunner.Assert_Equal CLng(96), CLng(s.Item("pathCount")), "ICASE1 pathCount=96"
     TestRunner.Assert_True Not CBool(s.Item("pathTruncated")), "ICASE1 not truncated"
     TestRunner.Assert_Equal CLng(96), CLng(r.Item("testCases").Count), "ICASE1 testCases=96"
-End Sub
-
-Public Sub Test_ICASE1_Full_Coverage100()
-    Dim cblPath As String
-    cblPath = ThisWorkbook.path & "\samples\input\ICASE1.cbl"
-    If Len(Dir(cblPath)) = 0 Then
-        TestRunner.Assert_True False, "ICASE1.cbl missing: " & cblPath
-        Exit Sub
-    End If
-    Dim src As String
-    src = CobolEncoding.ReadCobolSource(cblPath, "auto")
-    Dim r As OrderedDict
-    Set r = CobolParser.Analyze_Full(src)
-    Dim cov As OrderedDict
-    Set cov = r.Item("coverage")
     TestRunner.Assert_Equal CLng(21), CLng(cov.Item("totalBranches")), "totalBranches=21"
     TestRunner.Assert_Equal CLng(21), CLng(cov.Item("coveredBranches")), "coveredBranches=21"
 End Sub
