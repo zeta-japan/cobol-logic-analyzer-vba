@@ -203,6 +203,11 @@ Public Sub AnalyzeAndBuild(ByVal cblPath As String)
     CobolDiagram.BuildCallDiagram cblPath
     On Error GoTo 0
 
+    ' ver2.0 feature (2): data items / arguments sheet
+    On Error Resume Next
+    CobolDataView.BuildDataItemsSheet cblPath
+    On Error GoTo 0
+
     On Error Resume Next
     Kill jsonPath
     On Error GoTo 0
