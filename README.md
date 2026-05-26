@@ -56,23 +56,33 @@ cobol-logic-analyzer-vba/
 
 ## 使い方
 
-### 解析 + 5 シート描画 (フル機能)
+### 初回セットアップ (配布前に 1 回だけ)
 
 VBE のイミディエイトウィンドウで:
 
 ```
-Main.PickCobolAndBuild
+Main.SetupControlSheet
 ```
 
-→ ファイル選択ダイアログから `.cbl` を選ぶと、解析結果が 5 シート (COBOLソース / ロジック階層 / テストケース候補 / 分岐カバレッジ / 呼出関係) に出力されます。
+→ 「コントロール」シートと **「COBOL ソースを選択して解析」ボタン**が作られます。
+このあとブックを保存すれば、ボタンは永続します。配布版はこの状態で渡します。
 
-もしくは直接パス指定:
+### 通常の使い方 (利用者)
 
-```
-Main.AnalyzeAndBuild "C:\path\to\sample.cbl"
-```
+1. 「コントロール」シートの **ボタンをクリック**
+2. ファイル選択ダイアログから `.cbl` を選択
+3. 解析結果が 5 シート (COBOLソース / ロジック階層 / テストケース候補 / 分岐カバレッジ / 呼出関係) に生成される
 
-副産物として `<input>.vba.logic.json` が入力と同じフォルダに残ります (デバッグ用)。
+ボタンを使わず直接実行する場合: Excel で **Alt + F8 → `PickCobolAndBuild`**、または
+イミディエイトで `Main.AnalyzeAndBuild "C:\path\to\sample.cbl"`。
+
+中間 JSON は `%TEMP%\CobolAnalyzer_<名前>.logic.json` に書かれ、解析対象フォルダは変更しません。
+
+### 外部依存・セキュリティ
+
+- ネットワーク通信なし / シェル実行 (WScript.Shell 等) なし / PowerShell・.NET 不使用
+- 使用する COM は Windows 標準同梱のみ: `VBScript.RegExp` (正規表現)、`ADODB.Stream` (ファイル入出力)、`Scripting.Dictionary` (JSON パース補助)
+- ファイル書き込みは `%TEMP%` の中間 JSON のみ。解析対象ソースは読み取り専用
 
 ### 回帰テスト
 
