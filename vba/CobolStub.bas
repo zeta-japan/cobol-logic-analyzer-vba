@@ -88,11 +88,11 @@ Private Sub AppendDriver_(ByVal out As Collection, ByVal progName As String, _
     Emit_ out, "           STOP RUN.", "code"
 End Sub
 
-Private Sub AppendDummy_(ByVal out As Collection, ByVal call As OrderedDict, ByVal picMap As OrderedDict)
+Private Sub AppendDummy_(ByVal out As Collection, ByVal callRec As OrderedDict, ByVal picMap As OrderedDict)
     Dim subName As String
-    subName = CStr(call.Item("program"))
+    subName = CStr(callRec.Item("program"))
     Dim args As Collection
-    Set args = call.Item("args")
+    Set args = callRec.Item("args")
 
     Emit_ out, "==== Dummy サブ : " & subName & " (返却値はテストケースに応じて設定) ====", "head"
     Emit_ out, "       IDENTIFICATION DIVISION.", "code"
