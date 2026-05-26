@@ -31,9 +31,28 @@ cobol-logic-analyzer-vba/
 │   ├── TestRunner.bas                   Assert ヘルパー + Run_All_Tests
 │   └── Test_*.bas                       テスト群
 └── samples/
-    ├── input/                           ICASE1.cbl / sample_std.cbl / sample_prefixed.cbl
+    ├── input/                           ICASE1.cbl / ICASE2.cbl / sample_std.cbl / sample_prefixed.cbl
     └── golden/                          回帰テスト用 JSON fixture
 ```
+
+### サンプル COBOL (samples/input)
+
+| ファイル | 用途 |
+|---|---|
+| `ICASE1.cbl` | 基本サンプル。7段ネスト IF を含む保守的な構造 (回帰テストの基準) |
+| `ICASE2.cbl` | **分岐構文 網羅サンプル**。下記の全構文 + 6段ネストをカバー。デモ/動作確認向け |
+| `sample_std.cbl` | 標準書式 (プレフィックスなし) の判定確認用 |
+| `sample_prefixed.cbl` | プレフィックス書式の自動判定確認用 |
+
+`ICASE2.cbl` が網羅する構文 (機微な語は不使用・区分判定ドメイン):
+
+- 制御構文: `IF / ELSE / END-IF`、`EVALUATE / WHEN / WHEN OTHER / END-EVALUATE`、
+  `SEARCH / SEARCH ALL / AT END / WHEN / END-SEARCH`
+- 呼出: `PERFORM`、`PERFORM ... THRU ...`、`CALL`、`GO TO`
+- 命令: `MOVE / COMPUTE / READ / WRITE / REWRITE / DELETE`
+- 警告誘発: `NEXT SENTENCE`、複合条件 `AND / OR`
+- ネスト深さ **6 段** (`IF > IF > IF > EVALUATE > IF > IF`)
+- 解析結果: branchCount=19 / pathCount=96 / 警告 6 種 / SEARCH ALL 検出
 
 ---
 
@@ -92,6 +111,9 @@ Run_All_Tests
 
 → ICASE1 サンプルで各フェーズの主要数値 (branchCount=14, totalBranches=21, pathCount=96, coverage 21/21) を検証。`TestResults` シートにも結果が出ます。
 
+網羅サンプル `ICASE2.cbl` を実際に解析するには「コントロール」シートのボタン、または
+イミディエイトで `Main.AnalyzeAndBuild ThisWorkbook.path & "\samples\input\ICASE2.cbl"`。
+
 ---
 
 ## ロードマップ
@@ -103,7 +125,7 @@ Run_All_Tests
 | 3. 呼出グラフ + カバレッジ枠 | ✅ 完了 | `callGraph` / `coverage.branches` |
 | 4. パス列挙 + テストケース | ✅ 完了 | `testCases` (パス上限 200 で打切) |
 | 5. 5 シート描画 | ✅ 完了 | `CobolLogicViewer.BuildCobolReport` 結合 |
-| 6. UI + 配布 | 未着手 | ワンクリックボタン + コントロールシート |
+| 6. UI + 配布 | ✅ 完了 | ワンクリックボタン + コントロールシート (`SetupControlSheet`) |
 
 ---
 
