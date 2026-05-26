@@ -76,13 +76,13 @@ Main.SetupControlSheet
 ボタンを使わず直接実行する場合: Excel で **Alt + F8 → `PickCobolAndBuild`**、または
 イミディエイトで `Main.AnalyzeAndBuild "C:\path\to\sample.cbl"`。
 
-中間 JSON は `%TEMP%\CobolAnalyzer_<名前>.logic.json` に書かれ、解析対象フォルダは変更しません。
+中間 JSON は `%TEMP%` に一時生成され、描画後に**自動削除**されます。解析対象フォルダは変更しないため、利用者がファイルを掃除する必要はありません。
 
 ### 外部依存・セキュリティ
 
 - ネットワーク通信なし / シェル実行 (WScript.Shell 等) なし / PowerShell・.NET 不使用
 - 使用する COM は Windows 標準同梱のみ: `VBScript.RegExp` (正規表現)、`ADODB.Stream` (ファイル入出力)、`Scripting.Dictionary` (JSON パース補助)
-- ファイル書き込みは `%TEMP%` の中間 JSON のみ。解析対象ソースは読み取り専用
+- ファイル書き込みは `%TEMP%` の中間 JSON のみ (描画後に自動削除)。解析対象ソースは読み取り専用
 
 ### 回帰テスト
 

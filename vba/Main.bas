@@ -3,8 +3,7 @@ Attribute VB_Name = "Main"
 '   SetupControlSheet: build the control sheet + button (run once, then save).
 '   PickCobolAndBuild: file picker -> AnalyzeAndBuild (the button calls this).
 '   AnalyzeAndBuild  : full pipeline. Reads a .cbl, runs the engine, writes a
-'                      JSON to %TEMP%, then calls CobolLogicViewer.
-'                      BuildCobolReport to render the 5 sheets.
+'                      JSON to %TEMP%, renders 5 sheets, deletes the temp JSON.
 '   Sub_RunHello     : Phase 1 smoke test (programName + lines to A1).
 
 Option Explicit
@@ -74,9 +73,9 @@ Public Sub AnalyzeAndBuild(ByVal cblPath As String)
     Dim json As String
     json = JsonWriter.WriteJson(result)
 
-    ' Write the intermediate JSON to the user's TEMP folder (not next to the
-    ' source) so the analyzed project directory is never modified. The viewer
-    ' reads it straight back.
+    ' Write the intermediate JSON to TEMP (never next to the source), hand it to
+    ' the viewer, then delete it. The viewer reads the whole file into memory up
+    ' front, so nothing accumulates on disk and the user never has to clean up.
     Dim baseName As String
     baseName = Mid$(cblPath, InStrRev(cblPath, "\") + 1)
     Dim jsonPath As String
@@ -84,6 +83,10 @@ Public Sub AnalyzeAndBuild(ByVal cblPath As String)
     CobolEncoding.WriteAllText jsonPath, json, "utf-8"
 
     CobolLogicViewer.BuildCobolReport jsonPath
+
+    On Error Resume Next
+    Kill jsonPath
+    On Error GoTo 0
 End Sub
 
 ' Phase 1 smoke test: write a minimal JSON summary to A1 of the active sheet.
