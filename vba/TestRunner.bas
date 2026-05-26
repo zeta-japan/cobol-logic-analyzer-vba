@@ -97,6 +97,35 @@ Public Sub Bench_ICASE1()
     Debug.Print "BENCH DONE": DoEvents
 End Sub
 
+' Time every stage of the full button flow (analyze -> serialize -> write ->
+' parse -> render) so we can see which stage is slow. DoEvents after each line.
+Public Sub Bench_Full(Optional ByVal cblName As String = "ICASE2.cbl")
+    Dim cblPath As String, src As String, t As Double
+    cblPath = ThisWorkbook.path & "\samples\input\" & cblName
+    If Len(Dir(cblPath)) = 0 Then Debug.Print "missing: " & cblPath: Exit Sub
+    src = CobolEncoding.ReadCobolSource(cblPath, "auto")
+
+    Dim r As OrderedDict
+    t = Timer: Set r = CobolParser.Analyze_Full(src, "", "utf-8"): BP_ "Analyze_Full", t
+
+    Dim json As String
+    t = Timer: json = JsonWriter.WriteJson(r): BP_ "JsonWriter (len=" & Len(json) & ")", t
+
+    Dim jp As String
+    jp = Environ$("TEMP") & "\CobolAnalyzer_bench.logic.json"
+    t = Timer: CobolEncoding.WriteAllText jp, json, "utf-8": BP_ "WriteAllText", t
+
+    Dim parsed As Object
+    t = Timer: Set parsed = JsonParser.ParseJson(JsonParser.ReadAllText(jp)): BP_ "ReadAllText+ParseJson", t
+
+    t = Timer: CobolLogicViewer.BuildCobolReport jp: BP_ "BuildCobolReport (render)", t
+
+    On Error Resume Next
+    Kill jp
+    On Error GoTo 0
+    Debug.Print "BENCH_FULL DONE": DoEvents
+End Sub
+
 Private Sub BP_(ByVal label As String, ByVal t As Double)
     Debug.Print label & ": " & Format$((Timer - t) * 1000, "0") & " ms"
     DoEvents
