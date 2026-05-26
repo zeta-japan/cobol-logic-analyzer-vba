@@ -44,7 +44,7 @@ Public Sub RebuildVbaProject()
 
     ' Import the canonical set, in dependency-friendly order.
     Dim files As Variant, i As Long, n As Long
-    files = Array("OrderedDict.cls", "JsonParser.bas", "JsonWriter.bas", _
+    files = Array("OrderedDict.cls", "PathState.cls", "JsonParser.bas", "JsonWriter.bas", _
                   "CobolEncoding.bas", "CobolParser.bas", "CobolLogicViewer.bas", _
                   "Main.bas", "TestRunner.bas", _
                   "Test_Phase1.bas", "Test_Phase2.bas", "Test_Phase3.bas", _

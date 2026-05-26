@@ -701,7 +701,7 @@ Public Function Get_BranchEdges(ByVal nodes As Collection) As Collection
                 Set e = New OrderedDict
                 e.Add "branchId", n.Item("id") & ":nomatch"
                 e.Add "type", "evaluate"
-                e.Add "label", n.Item("expression") & " (該当WHENなし)"
+                e.Add "label", n.Item("expression") & " (・ｽY・ｽ・ｽWHEN・ｽﾈゑｿｽ)"
                 e.Add "line", n.Item("startLine")
                 edges.Add e
             End If
@@ -815,7 +815,7 @@ Public Function Expand_NodeSequence(ByVal nodes As Collection, ByVal conditions 
     Set states = New Collection
     states.Add NewState_(conditions, actions, lines, branchIds)
 
-    Dim node As OrderedDict, ntype As String, s As OrderedDict
+    Dim node As OrderedDict, ntype As String, s As PathState
     Dim ns As Collection, v As Variant
     For Each node In nodes
         If mPathTruncated Then Exit For
@@ -824,10 +824,10 @@ Public Function Expand_NodeSequence(ByVal nodes As Collection, ByVal conditions 
         If ntype = "action" Then
             Set ns = New Collection
             For Each s In states
-                ns.Add NewState_(s.Item("conditions"), _
-                                 ExtendObj_(s.Item("actions"), node), _
-                                 ExtendVal_(s.Item("lines"), node.Item("startLine")), _
-                                 s.Item("branchIds"))
+                ns.Add NewState_(s.Conditions, _
+                                 ExtendObj_(s.Actions, node), _
+                                 ExtendVal_(s.Lines, node.Item("startLine")), _
+                                 s.BranchIds)
             Next s
             Set states = ns
         ElseIf ntype = "if" Then
@@ -835,17 +835,17 @@ Public Function Expand_NodeSequence(ByVal nodes As Collection, ByVal conditions 
             For Each s In states
                 Dim thenStates As Collection, elseStates As Collection
                 Set thenStates = Expand_NodeSequence(node.Item("thenChildren"), _
-                    ExtendVal_(s.Item("conditions"), node.Item("condition")), _
-                    s.Item("actions"), _
-                    ExtendVal_(s.Item("lines"), node.Item("startLine")), _
-                    ExtendVal_(s.Item("branchIds"), node.Item("id") & ":then"))
+                    ExtendVal_(s.Conditions, node.Item("condition")), _
+                    s.Actions, _
+                    ExtendVal_(s.Lines, node.Item("startLine")), _
+                    ExtendVal_(s.BranchIds, node.Item("id") & ":then"))
                 For Each v In thenStates: ns.Add v: Next v
                 If node.Item("elseChildren").Count > 0 Then
                     Set elseStates = Expand_NodeSequence(node.Item("elseChildren"), _
-                        ExtendVal_(s.Item("conditions"), Convert_InvertCondition(CStr(node.Item("condition")))), _
-                        s.Item("actions"), _
-                        ExtendVal_(s.Item("lines"), node.Item("startLine")), _
-                        ExtendVal_(s.Item("branchIds"), node.Item("id") & ":else"))
+                        ExtendVal_(s.Conditions, Convert_InvertCondition(CStr(node.Item("condition")))), _
+                        s.Actions, _
+                        ExtendVal_(s.Lines, node.Item("startLine")), _
+                        ExtendVal_(s.BranchIds, node.Item("id") & ":else"))
                     For Each v In elseStates: ns.Add v: Next v
                 End If
             Next s
@@ -857,10 +857,10 @@ Public Function Expand_NodeSequence(ByVal nodes As Collection, ByVal conditions 
                 Dim w As OrderedDict, subStates As Collection
                 For Each w In node.Item("cases")
                     Set subStates = Expand_NodeSequence(w.Item("children"), _
-                        ExtendVal_(s.Item("conditions"), w.Item("condition")), _
-                        s.Item("actions"), _
-                        ExtendVal_(ExtendVal_(s.Item("lines"), node.Item("startLine")), w.Item("startLine")), _
-                        ExtendVal_(s.Item("branchIds"), w.Item("id")))
+                        ExtendVal_(s.Conditions, w.Item("condition")), _
+                        s.Actions, _
+                        ExtendVal_(ExtendVal_(s.Lines, node.Item("startLine")), w.Item("startLine")), _
+                        ExtendVal_(s.BranchIds, w.Item("id")))
                     For Each v In subStates: ns.Add v: Next v
                 Next w
             Next s
@@ -872,19 +872,19 @@ Public Function Expand_NodeSequence(ByVal nodes As Collection, ByVal conditions 
                 Dim w2 As OrderedDict, subStates2 As Collection
                 For Each w2 In node.Item("cases")
                     Set subStates2 = Expand_NodeSequence(w2.Item("children"), _
-                        ExtendVal_(s.Item("conditions"), w2.Item("condition")), _
-                        s.Item("actions"), _
-                        ExtendVal_(ExtendVal_(s.Item("lines"), node.Item("startLine")), w2.Item("startLine")), _
-                        ExtendVal_(s.Item("branchIds"), w2.Item("id")))
+                        ExtendVal_(s.Conditions, w2.Item("condition")), _
+                        s.Actions, _
+                        ExtendVal_(ExtendVal_(s.Lines, node.Item("startLine")), w2.Item("startLine")), _
+                        ExtendVal_(s.BranchIds, w2.Item("id")))
                     For Each v In subStates2: ns.Add v: Next v
                 Next w2
                 If node.Item("atEndChildren").Count > 0 Then
                     Dim atEndStates As Collection
                     Set atEndStates = Expand_NodeSequence(node.Item("atEndChildren"), _
-                        ExtendVal_(s.Item("conditions"), "AT END (" & node.Item("tableExpr") & ")"), _
-                        s.Item("actions"), _
-                        ExtendVal_(s.Item("lines"), node.Item("startLine")), _
-                        ExtendVal_(s.Item("branchIds"), node.Item("id") & ":atend"))
+                        ExtendVal_(s.Conditions, "AT END (" & node.Item("tableExpr") & ")"), _
+                        s.Actions, _
+                        ExtendVal_(s.Lines, node.Item("startLine")), _
+                        ExtendVal_(s.BranchIds, node.Item("id") & ":atend"))
                     For Each v In atEndStates: ns.Add v: Next v
                 End If
             Next s
@@ -897,13 +897,13 @@ Public Function Expand_NodeSequence(ByVal nodes As Collection, ByVal conditions 
 End Function
 
 Private Function NewState_(ByVal conds As Collection, ByVal acts As Collection, _
-                           ByVal lns As Collection, ByVal bids As Collection) As OrderedDict
-    Dim s As OrderedDict
-    Set s = New OrderedDict
-    s.Add "conditions", conds
-    s.Add "actions", acts
-    s.Add "lines", lns
-    s.Add "branchIds", bids
+                           ByVal lns As Collection, ByVal bids As Collection) As PathState
+    Dim s As PathState
+    Set s = New PathState
+    Set s.Conditions = conds
+    Set s.Actions = acts
+    Set s.Lines = lns
+    Set s.BranchIds = bids
     Set NewState_ = s
 End Function
 
@@ -930,9 +930,9 @@ End Function
 
 Public Function New_ScenarioName(ByVal conditions As Collection, ByVal idx As Long) As String
     If conditions.Count > 0 Then
-        New_ScenarioName = "シナリオ" & idx & ": " & JoinCol_(conditions, " / ")
+        New_ScenarioName = "・ｽV・ｽi・ｽ・ｽ・ｽI" & idx & ": " & JoinCol_(conditions, " / ")
     Else
-        New_ScenarioName = "シナリオ" & idx & ": 条件なし"
+        New_ScenarioName = "・ｽV・ｽi・ｽ・ｽ・ｽI" & idx & ": ・ｽ・ｽ・ｽ・ｽ・ｽﾈゑｿｽ"
     End If
 End Function
 
@@ -953,19 +953,19 @@ Public Function Get_Warnings(ByVal lines As Collection, ByVal rootNodes As Colle
     rx.IgnoreCase = False
 
     rx.Pattern = "\bNEXT\s+SENTENCE\b"
-    If rx.Test(sb) Then w.Add "NEXT SENTENCE が含まれています。分岐終端の確認が必要です。"
+    If rx.Test(sb) Then w.Add "NEXT SENTENCE ・ｽ・ｽ・ｽﾜまゑｿｽﾄゑｿｽ・ｽﾜゑｿｽ・ｽB・ｽ・ｽ・ｽ・ｽI・ｽ[・ｽﾌ確・ｽF・ｽ・ｽ・ｽK・ｽv・ｽﾅゑｿｽ・ｽB"
 
     rx.Pattern = "\bGO\s+TO\b"
-    If rx.Test(sb) Then w.Add "GO TO が含まれています。パス解析結果を手動確認してください。"
+    If rx.Test(sb) Then w.Add "GO TO ・ｽ・ｽ・ｽﾜまゑｿｽﾄゑｿｽ・ｽﾜゑｿｽ・ｽB・ｽp・ｽX・ｽ・ｽﾍ鯉ｿｽ・ｽﾊゑｿｽ・ｽ闢ｮ・ｽm・ｽF・ｽ・ｽ・ｽﾄゑｿｽ・ｽ・ｽ・ｽ・ｽ・ｽ・ｽ・ｽB"
 
     rx.Pattern = "\bPERFORM\b.+\bTHR(U|OUGH)\b"
-    If rx.Test(sb) Then w.Add "PERFORM THRU が含まれています。段落範囲候補を構造情報として抽出しています。"
+    If rx.Test(sb) Then w.Add "PERFORM THRU ・ｽ・ｽ・ｽﾜまゑｿｽﾄゑｿｽ・ｽﾜゑｿｽ・ｽB・ｽi・ｽ・ｽ・ｽﾍ囲鯉ｿｽ・ｽ・ｽ・ｽ\・ｽ・ｽ・ｽ・ｽ・ｽﾆゑｿｽ・ｽﾄ抵ｿｽ・ｽo・ｽ・ｽ・ｽﾄゑｿｽ・ｽﾜゑｿｽ・ｽB"
 
     If Get_NodeCount(rootNodes, Array("evaluate")) > 0 Then
-        w.Add "EVALUATE 条件はWHEN単位で抽出しています。複合条件の排他性はレビュー対象です。"
+        w.Add "EVALUATE ・ｽ・ｽ・ｽ・ｽ・ｽ・ｽWHEN・ｽP・ｽﾊで抵ｿｽ・ｽo・ｽ・ｽ・ｽﾄゑｿｽ・ｽﾜゑｿｽ・ｽB・ｽ・ｽ・ｽ・ｽ・ｽ・ｽ・ｽ・ｽ・ｽﾌ排・ｽ・ｽ・ｽ・ｽ・ｽﾍ・ｿｽ・ｽr・ｽ・ｽ・ｽ[・ｽﾎ象でゑｿｽ・ｽB"
     End If
     If Get_NodeCount(rootNodes, Array("search")) > 0 Then
-        w.Add "SEARCH の WHEN は表データに依存します。テストデータ設計時に表内容の確認が必要です。"
+        w.Add "SEARCH ・ｽ・ｽ WHEN ・ｽﾍ表・ｽf・ｽ[・ｽ^・ｽﾉ依托ｿｽ・ｽ・ｽ・ｽﾜゑｿｽ・ｽB・ｽe・ｽX・ｽg・ｽf・ｽ[・ｽ^・ｽﾝ計・ｽ・ｽ・ｽﾉ表・ｽ・ｽ・ｽe・ｽﾌ確・ｽF・ｽ・ｽ・ｽK・ｽv・ｽﾅゑｿｽ・ｽB"
     End If
 
     Dim rxIfStart As Object, rxAndOr As Object, compoundFound As Boolean
@@ -977,13 +977,13 @@ Public Function Get_Warnings(ByVal lines As Collection, ByVal rootNodes As Colle
             Exit For
         End If
     Next line
-    If compoundFound Then w.Add "複合条件 (AND/OR) は分解していません。条件網羅は手動で確認してください。"
+    If compoundFound Then w.Add "・ｽ・ｽ・ｽ・ｽ・ｽ・ｽ・ｽ・ｽ (AND/OR) ・ｽﾍ包ｿｽ・ｽ・ｽ・ｽ・ｽ・ｽﾄゑｿｽ・ｽﾜゑｿｽ・ｽ・ｽB・ｽ・ｽ・ｽ・ｽ・ｽﾔ暦ｿｽ・ｽﾍ手動・ｽﾅ確・ｽF・ｽ・ｽ・ｽﾄゑｿｽ・ｽ・ｽ・ｽ・ｽ・ｽ・ｽ・ｽB"
 
     If mUnclosedFrames > 0 Then
-        w.Add "END句が不足している可能性があります。未クローズのブロックが " & mUnclosedFrames & " 個あります。"
+        w.Add "END・ｽ蛯ｪ・ｽs・ｽ・ｽ・ｽ・ｽ・ｽﾄゑｿｽ・ｽ・ｽﾂ能・ｽ・ｽ・ｽ・ｽ・ｽ・ｽ・ｽ・ｽﾜゑｿｽ・ｽB・ｽ・ｽ・ｽN・ｽ・ｽ・ｽ[・ｽY・ｽﾌブ・ｽ・ｽ・ｽb・ｽN・ｽ・ｽ " & mUnclosedFrames & " ・ｽﾂゑｿｽ・ｽ・ｽﾜゑｿｽ・ｽB"
     End If
     If mPathTruncated Then
-        w.Add "パス数が上限 (" & MAX_PATH_STATES & ") を超えたため、一部のパスは展開されていません。"
+        w.Add "・ｽp・ｽX・ｽ・ｽ・ｽ・ｽ・ｽ・ｽ・ｽ (" & MAX_PATH_STATES & ") ・ｽｴゑｿｽ・ｽ・ｽ・ｽ・ｽ・ｽﾟ、・ｽ齦費ｿｽﾌパ・ｽX・ｽﾍ展・ｽJ・ｽ・ｽ・ｽ・ｽﾄゑｿｽ・ｽﾜゑｿｽ・ｽ・ｽB"
     End If
 
     Set Get_Warnings = w
@@ -1165,10 +1165,10 @@ Public Function Analyze_Full(ByVal source As String, Optional ByVal forcePrefix 
     Dim rawStates As Collection
     Set rawStates = Expand_NodeSequence(rootNodes, empties(1), empties(2), empties(3), empties(4))
 
-    Dim pathStates As Collection, s As OrderedDict
+    Dim pathStates As Collection, s As PathState
     Set pathStates = New Collection
     For Each s In rawStates
-        If s.Item("actions").Count > 0 Then pathStates.Add s
+        If s.Actions.Count > 0 Then pathStates.Add s
     Next s
 
     Dim testCases As Collection, tc As OrderedDict
@@ -1177,22 +1177,22 @@ Public Function Analyze_Full(ByVal source As String, Optional ByVal forcePrefix 
     For Each s In pathStates
         idx = idx + 1
         Dim srcLines As Collection
-        Set srcLines = SortUniqueLong_(s.Item("lines"))
+        Set srcLines = SortUniqueLong_(s.Lines)
         Dim actionLabels As Collection, actionLines As Collection, a As Variant
         Set actionLabels = New Collection
         Set actionLines = New Collection
-        For Each a In s.Item("actions")
+        For Each a In s.Actions
             actionLabels.Add a.Item("label")
             actionLines.Add a.Item("startLine")
         Next a
         Dim condSummary As String
-        condSummary = JoinCol_(s.Item("conditions"), " / ")
+        condSummary = JoinCol_(s.Conditions, " / ")
 
         Set tc = New OrderedDict
         tc.Add "id", "P" & Format$(idx, "000")
         tc.Add "testCaseId", "TC-" & Format$(idx, "000")
-        tc.Add "scenarioName", New_ScenarioName(s.Item("conditions"), idx)
-        tc.Add "conditions", s.Item("conditions")
+        tc.Add "scenarioName", New_ScenarioName(s.Conditions, idx)
+        tc.Add "conditions", s.Conditions
         tc.Add "conditionSummary", condSummary
         tc.Add "actionLabels", actionLabels
         tc.Add "actionLines", actionLines
@@ -1200,13 +1200,13 @@ Public Function Analyze_Full(ByVal source As String, Optional ByVal forcePrefix 
         If Len(condSummary) > 0 Then
             tc.Add "inputData", condSummary
         Else
-            tc.Add "inputData", "条件なし"
+            tc.Add "inputData", "・ｽ・ｽ・ｽ・ｽ・ｽﾈゑｿｽ"
         End If
         tc.Add "expectedValue", JoinCol_(actionLabels, " / ")
-        If idx = 1 Then tc.Add "priority", "高" Else tc.Add "priority", "中"
+        If idx = 1 Then tc.Add "priority", "・ｽ・ｽ" Else tc.Add "priority", "・ｽ・ｽ"
         tc.Add "sourceLines", srcLines
         tc.Add "sourceLineText", JoinCol_(srcLines, ", ")
-        tc.Add "branchIds", s.Item("branchIds")
+        tc.Add "branchIds", s.BranchIds
         testCases.Add tc
     Next s
 
