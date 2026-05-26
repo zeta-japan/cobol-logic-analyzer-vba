@@ -7,50 +7,57 @@ Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
-' OrderedDict - ordered key/value container.
-' Preserves insertion order of keys. Used by JsonWriter to guarantee field
-' order in the emitted JSON output (Scripting.Dictionary does not guarantee
-' key order).
+' OrderedDict - insertion-ordered key/value container.
+'
+' Backed by two intrinsic VBA Collections (no Scripting.Dictionary). This is
+' deliberate: CreateObject("Scripting.Dictionary") can cost tens of
+' milliseconds per instance on locked-down machines (AV scans each COM
+' instantiation), and the analyzer builds hundreds of these. "New Collection"
+' is in-process and effectively free, so creation is ~instant.
+'
+' mKeys keeps the keys in insertion order (for stable JSON output); mVals is a
+' keyed Collection for O(1)-ish lookup. Keys are case-insensitive (Collection
+' semantics) and must be unique - fine for our fixed JSON field names.
 
 Option Explicit
 
 Private mKeys As Collection
-Private mItems As Object
+Private mVals As Collection
 
 Private Sub Class_Initialize()
     Set mKeys = New Collection
-    Set mItems = CreateObject("Scripting.Dictionary")
+    Set mVals = New Collection
 End Sub
 
 Public Sub Add(ByVal key As String, ByVal value As Variant)
-    If mItems.Exists(key) Then
-        If IsObject(value) Then
-            Set mItems(key) = value
-        Else
-            mItems(key) = value
-        End If
+    If Exists(key) Then
+        mVals.Remove key            ' overwrite existing value, keep key order
     Else
         mKeys.Add key
-        If IsObject(value) Then
-            mItems.Add key, value
-        Else
-            mItems.Add key, value
-        End If
+    End If
+    If IsObject(value) Then
+        mVals.Add value, key
+    Else
+        mVals.Add value, key
     End If
 End Sub
 
 Public Property Get Item(ByVal key As String) As Variant
-    If mItems.Exists(key) Then
-        If IsObject(mItems(key)) Then
-            Set Item = mItems(key)
-        Else
-            Item = mItems(key)
-        End If
+    On Error Resume Next
+    If IsObject(mVals.Item(key)) Then
+        Set Item = mVals.Item(key)
+    Else
+        Item = mVals.Item(key)
     End If
+    On Error GoTo 0
 End Property
 
 Public Function Exists(ByVal key As String) As Boolean
-    Exists = mItems.Exists(key)
+    Dim probe As Boolean
+    On Error Resume Next
+    probe = IsObject(mVals.Item(key))   ' raises if key absent
+    Exists = (Err.Number = 0)
+    On Error GoTo 0
 End Function
 
 Public Function Keys() As Collection
@@ -58,5 +65,5 @@ Public Function Keys() As Collection
 End Function
 
 Public Property Get Count() As Long
-    Count = mItems.Count
+    Count = mKeys.Count
 End Property
