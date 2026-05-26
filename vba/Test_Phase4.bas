@@ -27,9 +27,9 @@ Public Sub Test_ExpandSequence_LinearActions()
     Dim states As Collection
     Set states = CobolParser.Expand_NodeSequence(roots, e, e2, e3, e4)
     TestRunner.Assert_Equal CLng(1), CLng(states.Count), "1 linear path"
-    Dim st As OrderedDict
+    Dim st As PathState
     Set st = states.Item(1)
-    TestRunner.Assert_Equal CLng(2), CLng(st.Item("actions").Count), "2 actions in path"
+    TestRunner.Assert_Equal CLng(2), CLng(st.Actions.Count), "2 actions in path"
 End Sub
 
 Public Sub Test_ExpandSequence_IfElse()
