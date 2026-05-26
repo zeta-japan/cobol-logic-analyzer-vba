@@ -198,6 +198,11 @@ Public Sub AnalyzeAndBuild(ByVal cblPath As String)
 
     CobolLogicViewer.BuildCobolReport jsonPath
 
+    ' ver2.0 feature (1): call/usage relationship diagram sheet
+    On Error Resume Next
+    CobolDiagram.BuildCallDiagram cblPath
+    On Error GoTo 0
+
     On Error Resume Next
     Kill jsonPath
     On Error GoTo 0
