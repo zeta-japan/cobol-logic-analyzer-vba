@@ -46,10 +46,11 @@ Public Sub RebuildVbaProject()
     Dim files As Variant, i As Long, n As Long
     files = Array("OrderedDict.cls", "PathState.cls", "JsonParser.bas", "JsonWriter.bas", _
                   "CobolEncoding.bas", "CobolParser.bas", "CobolCalls.bas", "CobolData.bas", _
-                  "CobolDiagram.bas", "CobolDataView.bas", _
+                  "CobolDiagram.bas", "CobolDataView.bas", "CobolStub.bas", _
                   "CobolLogicViewer.bas", "Main.bas", "TestRunner.bas", _
                   "Test_Phase1.bas", "Test_Phase2.bas", "Test_Phase3.bas", _
-                  "Test_Phase4.bas", "Test_Phase5.bas", "Test_Phase6.bas", "Test_Phase7.bas")
+                  "Test_Phase4.bas", "Test_Phase5.bas", "Test_Phase6.bas", _
+                  "Test_Phase7.bas", "Test_Phase8.bas")
     n = 0
     For i = LBound(files) To UBound(files)
         If Len(Dir(folder & files(i))) > 0 Then

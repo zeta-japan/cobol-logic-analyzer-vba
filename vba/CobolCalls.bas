@@ -156,6 +156,59 @@ Private Sub AddAccess_(ByVal names As Collection, ByVal modeMap As OrderedDict, 
     If Not found Then modes.Add mode
 End Sub
 
+' The program's own formal parameters: the PROCEDURE DIVISION USING list.
+' Handles a USING clause that continues on the following line (common format).
+' Returns a Collection of parameter names (empty if the program takes none).
+Public Function Get_ProcedureUsing(ByVal lines As Collection) As Collection
+    Dim result As Collection
+    Set result = New Collection
+
+    Dim rxProc As Object, rxUsing As Object
+    Set rxProc = CreateObject("VBScript.RegExp")
+    rxProc.Pattern = "^PROCEDURE\s+DIVISION(\s+USING\s+(.+))?$"
+    rxProc.IgnoreCase = False
+    Set rxUsing = CreateObject("VBScript.RegExp")
+    rxUsing.Pattern = "^USING\s+(.+)$"
+    rxUsing.IgnoreCase = False
+
+    Dim line As OrderedDict, txt As String, m As Object
+    Dim foundProc As Boolean, captured As Boolean
+    foundProc = False: captured = False
+    For Each line In lines
+        txt = CobolParser.Convert_StripTrailingPeriod(line.Item("Text"))
+        If Not foundProc Then
+            Set m = rxProc.Execute(txt)
+            If m.Count > 0 Then
+                foundProc = True
+                If Len(m.Item(0).SubMatches(1)) > 0 Then
+                    AddArgs_ result, m.Item(0).SubMatches(1)
+                    captured = True
+                End If
+            End If
+        ElseIf Not captured Then
+            Set m = rxUsing.Execute(txt)
+            If m.Count > 0 Then
+                AddArgs_ result, m.Item(0).SubMatches(0)
+                captured = True
+            Else
+                Exit For ' procedure body started without a USING clause
+            End If
+        Else
+            Exit For
+        End If
+    Next line
+    Set Get_ProcedureUsing = result
+End Function
+
+Private Sub AddArgs_(ByVal coll As Collection, ByVal usingStr As String)
+    Dim parts() As String, i As Long, tok As String
+    parts = Split(usingStr, " ")
+    For i = LBound(parts) To UBound(parts)
+        tok = Trim$(parts(i))
+        If tok <> "" And Not IsArgKeyword_(tok) Then coll.Add tok
+    Next i
+End Sub
+
 Private Function IsArgKeyword_(ByVal tok As String) As Boolean
     Select Case UCase$(tok)
         Case "BY", "REFERENCE", "CONTENT", "VALUE": IsArgKeyword_ = True

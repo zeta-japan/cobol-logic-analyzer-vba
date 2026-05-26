@@ -208,6 +208,11 @@ Public Sub AnalyzeAndBuild(ByVal cblPath As String)
     CobolDataView.BuildDataItemsSheet cblPath
     On Error GoTo 0
 
+    ' ver2.0 feature (3): Driver / Dummy skeletons sheet
+    On Error Resume Next
+    CobolStub.BuildStubsSheet cblPath
+    On Error GoTo 0
+
     On Error Resume Next
     Kill jsonPath
     On Error GoTo 0
