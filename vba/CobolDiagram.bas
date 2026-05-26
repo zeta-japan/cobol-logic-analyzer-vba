@@ -1,5 +1,5 @@
 Attribute VB_Name = "CobolDiagram"
-' CobolDiagram - ver2.0 feature á@: draw the call / data-usage relationship
+' CobolDiagram - ver2.0 feature (1): draw the call / data-usage relationship
 ' diagram on a "åƒèoä÷åWê}" sheet (main program -> called sub-programs with
 ' their USING arguments, plus the files/DB accessed).
 '
@@ -10,7 +10,7 @@ Attribute VB_Name = "CobolDiagram"
 Option Explicit
 
 Private Const SHP_ROUNDRECT As Long = 5    ' msoShapeRoundedRectangle
-Private Const SHP_CAN As Long = 22         ' msoShapeCan (cylinder / DB look)
+Private Const SHP_CAN As Long = 13         ' msoShapeCan (cylinder / DB look)
 Private Const TXT_HORIZONTAL As Long = 1   ' msoTextOrientationHorizontal
 
 Public Sub BuildCallDiagram(ByVal cblPath As String)
@@ -30,14 +30,18 @@ Public Sub BuildCallDiagram(ByVal cblPath As String)
 
     Dim ws As Worksheet
     Set ws = JsonParser.EnsureSheet("åƒèoä÷åWê}")
+
+    ' Draw with screen updating off (the 5-sheet report turned it back on).
+    Application.ScreenUpdating = False
+    On Error Resume Next
+    ws.Activate
+    ActiveWindow.DisplayGridlines = False
+    On Error GoTo Done_
+
     ws.Cells.Clear
     Do While ws.Shapes.Count > 0
         ws.Shapes(1).Delete
     Loop
-    ws.Activate
-    On Error Resume Next
-    ActiveWindow.DisplayGridlines = False
-    On Error GoTo 0
 
     ws.Range("A1").value = "åƒèo / óòópä÷åWê} : " & progName
     With ws.Range("A1").Font
@@ -61,15 +65,15 @@ Public Sub BuildCallDiagram(ByVal cblPath As String)
 
     ' --- data resources (cylinders, top row) ---
     Dim dx As Double, dy As Double, dw As Double, dh As Double, gi As Long
-    dy = 60: dw = 130: dh = 56
+    dy = 60: dw = 140: dh = 64
     Dim d As OrderedDict, dShape As Shape, modeText As String
     gi = 0
     For Each d In data
-        dx = 470 + gi * 160
+        dx = 470 + gi * 170
         Set dShape = AddBox_(ws, SHP_CAN, dx, dy, dw, dh, CStr(d.Item("name")), RGB(218, 232, 246), RGB(40, 40, 40))
         AddConnector_ ws, mainLeft + mainW / 2, mainTop, dx + dw / 2, dy + dh
         modeText = JoinModes_(d.Item("modes"))
-        AddNote_ ws, dx, dy + dh + 2, dw, 16, modeText, 8, RGB(120, 120, 120)
+        AddNote_ ws, dx, dy + dh + 2, dw + 80, 16, modeText, 8, RGB(120, 120, 120)
         gi = gi + 1
     Next d
 
@@ -93,6 +97,9 @@ Public Sub BuildCallDiagram(ByVal cblPath As String)
     End If
 
     ws.Range("A1").Select
+
+Done_:
+    Application.ScreenUpdating = True
 End Sub
 
 Private Function AddBox_(ByVal ws As Worksheet, ByVal shapeType As Long, _
@@ -104,6 +111,7 @@ Private Function AddBox_(ByVal ws As Worksheet, ByVal shapeType As Long, _
     s.Line.ForeColor.RGB = RGB(90, 90, 90)
     With s.TextFrame2
         .VerticalAnchor = msoAnchorMiddle
+        .WordWrap = msoFalse
         With .TextRange
             .Text = caption
             .ParagraphFormat.Alignment = msoAlignCenter
