@@ -66,6 +66,42 @@ Public Sub Run_RenderTest()
     Test_End
 End Sub
 
+' Timing harness: prints elapsed ms for each engine stage on ICASE1, with a
+' DoEvents after every line so the Immediate window updates even mid-run. The
+' last line printed before a freeze identifies the slow stage.
+Public Sub Bench_ICASE1()
+    Dim cblPath As String, src As String, t As Double
+    cblPath = ThisWorkbook.path & "\samples\input\ICASE1.cbl"
+    If Len(Dir(cblPath)) = 0 Then Debug.Print "ICASE1 missing: " & cblPath: Exit Sub
+    src = CobolEncoding.ReadCobolSource(cblPath, "auto")
+
+    Dim norm As OrderedDict, lines As Collection, root As Collection
+    t = Timer: Set norm = CobolParser.Get_NormalizedCobolLines(src, ""): BP_ "normalize", t
+    Set lines = norm.Item("Lines")
+    t = Timer: Set root = CobolParser.Get_CobolNodes(lines): BP_ "Get_CobolNodes roots=" & root.Count, t
+
+    Dim struct As OrderedDict
+    t = Timer: Set struct = CobolParser.Get_ProgramStructure(lines): BP_ "Get_ProgramStructure", t
+
+    CobolParser.ResetEngineState
+    Dim e1 As Collection, e2 As Collection, e3 As Collection, e4 As Collection, raw As Collection
+    Set e1 = New Collection: Set e2 = New Collection: Set e3 = New Collection: Set e4 = New Collection
+    t = Timer: Set raw = CobolParser.Expand_NodeSequence(root, e1, e2, e3, e4)
+    BP_ "Expand raw=" & raw.Count & " calls=" & CobolParser.ExpandCalls & " trunc=" & CobolParser.PathTruncated, t
+
+    Dim cg As OrderedDict
+    t = Timer: Set cg = CobolParser.Get_CallRelationships(lines, struct): BP_ "Get_CallRelationships edges=" & cg.Item("edges").Count, t
+
+    Dim full As OrderedDict
+    t = Timer: Set full = CobolParser.Analyze_Full(src): BP_ "Analyze_Full", t
+    Debug.Print "BENCH DONE": DoEvents
+End Sub
+
+Private Sub BP_(ByVal label As String, ByVal t As Double)
+    Debug.Print label & ": " & Format$((Timer - t) * 1000, "0") & " ms"
+    DoEvents
+End Sub
+
 ' Run one named test sub via Application.Run, catching any unhandled error
 ' and converting it to a single [FAIL] line. Lets the rest of the suite run.
 Public Sub Run_One(ByVal testName As String)
