@@ -26,3 +26,6 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Local snapshot archives (kept for personal record, not for the repo)
+Commit-*/

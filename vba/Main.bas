@@ -196,7 +196,14 @@ Public Sub AnalyzeAndBuild(ByVal cblPath As String)
     jsonPath = Environ$("TEMP") & "\CobolAnalyzer_" & baseName & ".logic.json"
     CobolEncoding.WriteAllText jsonPath, json, "utf-8"
 
-    CobolLogicViewer.BuildCobolReport jsonPath
+    ' Suppress this call's own "done" dialog; one notice is shown at the very end
+    ' so it does not interrupt before the ver2.0 sheets are built.
+    CobolLogicViewer.BuildCobolReport jsonPath, False
+
+    ' ver2.1: mark test-case decision paths onto the logic-hierarchy tree (column D)
+    On Error Resume Next
+    CobolTcMark.BuildTcMarking result
+    On Error GoTo 0
 
     ' ver2.0 feature (1): call/usage relationship diagram sheet
     On Error Resume Next
@@ -216,6 +223,15 @@ Public Sub AnalyzeAndBuild(ByVal cblPath As String)
     On Error Resume Next
     Kill jsonPath
     On Error GoTo 0
+
+    ' Single completion notice, after every sheet (incl. ver2.0) is built.
+    On Error Resume Next
+    ThisWorkbook.Sheets("ロジック階層").Activate
+    On Error GoTo 0
+    MsgBox "解析が完了しました。" & vbLf & vbLf & _
+           "生成シート:" & vbLf & _
+           "・COBOLソース / ロジック階層 / テストケース候補 / 分岐カバレッジ / 呼出関係" & vbLf & _
+           "・呼出関係図 / 入力項目 / Driver_Dummy雛形", vbInformation
 End Sub
 
 ' Phase 1 smoke test: write a minimal JSON summary to A1 of the active sheet.

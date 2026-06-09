@@ -78,7 +78,7 @@ Public Sub PickJsonAndBuild()
     End If
 End Sub
 
-Public Sub BuildCobolReport(ByVal logicJsonPath As String)
+Public Sub BuildCobolReport(ByVal logicJsonPath As String, Optional ByVal showDone As Boolean = True)
     Dim root As Object
     Set root = ParseJson(ReadAllText(logicJsonPath))
 
@@ -87,7 +87,7 @@ Public Sub BuildCobolReport(ByVal logicJsonPath As String)
 
     ' COBOLソース を先に作成 (ロジック階層からハイパーリンクするため)
     RenderSource    EnsureSheet("COBOLソース"),       root
-    RenderHierarchy EnsureSheet("ロジック階層"),     root
+    CobolExecTree.RenderExecHierarchy EnsureSheet("ロジック階層"),     root
     RenderTestCases EnsureSheet("テストケース候補"), root
     RenderCoverage  EnsureSheet("分岐カバレッジ"),   root
     RenderCallGraph EnsureSheet("呼出関係"),         root
@@ -95,7 +95,7 @@ Public Sub BuildCobolReport(ByVal logicJsonPath As String)
     ThisWorkbook.Sheets("ロジック階層").Activate
     Application.ScreenUpdating = True
 
-    MsgBox "解析レポート生成完了" & vbLf & logicJsonPath
+    If showDone Then MsgBox "解析レポート生成完了" & vbLf & logicJsonPath
     Exit Sub
 Fail:
     Application.ScreenUpdating = True

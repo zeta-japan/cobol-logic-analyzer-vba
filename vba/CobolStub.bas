@@ -12,6 +12,17 @@ Attribute VB_Name = "CobolStub"
 Option Explicit
 
 Public Sub BuildStubsSheet(ByVal cblPath As String)
+    Dim progName As String
+    Dim out As Collection
+    Set out = BuildStubLines(cblPath, progName)
+    Render_ out, progName
+End Sub
+
+' Build the Driver/Dummy skeleton text as a Collection of OrderedDict
+' { text, kind }; the analyzed program name is returned via progNameOut.
+' Public (and free of any sheet I/O) so tests can assert on the generated
+' content without rendering - this isolates "what we build" from "how we draw".
+Public Function BuildStubLines(ByVal cblPath As String, ByRef progNameOut As String) As Collection
     Dim src As String
     src = CobolEncoding.ReadCobolSource(cblPath, "auto")
     Dim norm As OrderedDict
@@ -21,6 +32,7 @@ Public Sub BuildStubsSheet(ByVal cblPath As String)
 
     Dim progName As String
     progName = CobolParser.Get_ProgramName(lines)
+    progNameOut = progName
     Dim usingParams As Collection, calls As Collection, items As Collection, linkage As Collection
     Set usingParams = CobolCalls.Get_ProcedureUsing(lines)
     Set calls = CobolCalls.Get_ExternalCalls(lines)
@@ -30,7 +42,6 @@ Public Sub BuildStubsSheet(ByVal cblPath As String)
     Dim picMap As OrderedDict
     Set picMap = BuildPicMap_(items)
 
-    ' Build the output text (Collection of OrderedDict { text, kind }).
     Dim out As Collection
     Set out = New Collection
     AppendDriver_ out, progName, usingParams, linkage
@@ -45,8 +56,8 @@ Public Sub BuildStubsSheet(ByVal cblPath As String)
         Emit_ out, "(外部 CALL が無いため Dummy サブはありません)", "note"
     End If
 
-    Render_ out, progName
-End Sub
+    Set BuildStubLines = out
+End Function
 
 Private Sub AppendDriver_(ByVal out As Collection, ByVal progName As String, _
                           ByVal usingParams As Collection, ByVal linkage As Collection)
@@ -192,8 +203,13 @@ Private Sub Render_(ByVal out As Collection, ByVal progName As String)
     Set ws = JsonParser.EnsureSheet("Driver_Dummy雛形")
 
     Application.ScreenUpdating = False
-    On Error GoTo Done_
     ws.Cells.Clear
+
+    ' Column A holds raw COBOL skeleton text. Header rows begin with "===="
+    ' and Excel would treat a leading "=" as a FORMULA (runtime error 1004 on
+    ' assignment), which previously aborted the whole render. Forcing the column
+    ' to Text makes every value store literally, "=" and all.
+    ws.Columns(1).NumberFormat = "@"
 
     ws.Range("A1").value = "Driver / Dummy 雛形 : " & progName
     With ws.Range("A1").Font
@@ -204,11 +220,38 @@ Private Sub Render_(ByVal out As Collection, ByVal progName As String)
         .Name = "Meiryo UI": .Size = 9: .Color = RGB(120, 120, 120)
     End With
 
-    Dim row As Long, e As OrderedDict, kind As String
+    Dim row As Long
     row = 4
-    For Each e In out
+
+    ' Guard: never leave the sheet silently empty. If there is nothing to draw
+    ' (or the collection was lost), say so on the sheet instead of looking blank.
+    Dim n As Long
+    If out Is Nothing Then n = -1 Else n = out.Count
+    If n <= 0 Then
+        ws.Cells(row, 1).value = "(診断: 生成対象の行がありません。out=" & n & ")"
+        ws.Cells(row, 1).Font.Color = RGB(192, 0, 0)
+        GoTo Finish_
+    End If
+
+    ' Index-based loop (deterministic; avoids any For Each enumerator quirk).
+    ' Per-row error capture: a single bad row is reported in place, the rest
+    ' still render - the loop can no longer abort the whole sheet.
+    Dim e As OrderedDict, kind As String, txt As String, i As Long
+    For i = 1 To n
+        kind = ""
+        txt = ""
+        On Error Resume Next
+        Set e = out.Item(i)
         kind = CStr(e.Item("kind"))
-        ws.Cells(row, 1).value = CStr(e.Item("text"))
+        txt = CStr(e.Item("text"))
+        ws.Cells(row, 1).value = txt
+        If Err.Number <> 0 Then
+            kind = "note"
+            ws.Cells(row, 1).value = "(診断: 行 " & i & " でエラー #" & Err.Number & " " & Err.Description & ")"
+            Err.Clear
+        End If
+        On Error GoTo 0
+
         Select Case kind
             Case "head"
                 With ws.Cells(row, 1)
@@ -224,10 +267,12 @@ Private Sub Render_(ByVal out As Collection, ByVal progName As String)
                 ws.Cells(row, 1).Font.Size = 10
         End Select
         row = row + 1
-    Next e
+    Next i
 
+Finish_:
     ws.Columns("A").ColumnWidth = 90
-    ws.Range("A1").Select
-Done_:
+    On Error Resume Next
+    Application.GoTo ws.Range("A1"), True
+    On Error GoTo 0
     Application.ScreenUpdating = True
 End Sub

@@ -56,6 +56,7 @@ Public Sub Run_All_Tests()
     Test_Phase6.Run_All
     Test_Phase7.Run_All
     Test_Phase8.Run_All
+    Test_Phase9.Run_All
     Test_End
 End Sub
 
