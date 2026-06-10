@@ -157,6 +157,24 @@ End Function
 
 ' What terminator sections were applied (auto-detected by ABEND naming or
 ' registered on the control sheet B24:B29) - shown so the user can verify.
+' render the uncovered-arm reason code from the engine in Japanese
+Private Function DiagJp_(ByVal flow As OrderedDict, ByVal token As String) As String
+    DiagJp_ = ""
+    If Not flow.Exists("armDiag") Then Exit Function
+    Dim d As OrderedDict
+    Set d = flow.Item("armDiag")
+    If Not d.Exists(token) Then Exit Function
+    Dim c As String
+    c = CStr(d.Item(token))
+    If c = "noctx" Then
+        DiagJp_ = "｜経路なし（PERFORM 未到達領域）"
+    ElseIf Left$(c, 9) = "conflict|" Then
+        DiagJp_ = "｜値競合: " & Mid$(c, 10) & " を強制できず（定数伝播）"
+    ElseIf c = "dead" Then
+        DiagJp_ = "｜経路構築不可"
+    End If
+End Function
+
 Private Function TermsNote_(ByVal flow As OrderedDict) As String
     Dim s As String
     If flow.Exists("termsApplied") Then
@@ -270,7 +288,7 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
         Next c
         If Not anyHit Then
             ws.Range(ws.Cells(row, 1), ws.Cells(row, 2 + cases.Count)).Interior.Color = RGB(255, 199, 206)
-            ws.Cells(row, 2 + cases.Count + 1).Value = "未カバー"
+            ws.Cells(row, 2 + cases.Count + 1).Value = "未カバー" & DiagJp_(flow, CStr(a.Item("Token")))
             ws.Cells(row, 2 + cases.Count + 1).Font.Color = RGB(192, 0, 0)
         End If
         row = row + 1

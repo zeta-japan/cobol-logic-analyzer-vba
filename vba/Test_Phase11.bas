@@ -12,6 +12,57 @@ Public Sub Run_All()
     TestRunner.Run_One "Test_Flow_ICASE3"
     TestRunner.Run_One "Test_Flow_CopyTolerance"
     TestRunner.Run_One "Test_Flow_LoopAndFlag"
+    TestRunner.Run_One "Test_Flow_UnsetSteer"
+End Sub
+
+' DB-flag idiom: F-MAS1 is initialized to a literal and set from a RECORD
+' FIELD (non-literal MOVE) in a sibling branch - no literal 'B' site exists,
+' so value steering alone cannot unblock IF F-MAS1 = 'B'. The unset-steering
+' fallback walks through the invalidating MOVE instead. ver4 oracle: 4 arms,
+' all covered, 2 cases, 3 normal candidate walks.
+Public Sub Test_Flow_UnsetSteer()
+    Dim s As String
+    s = ""
+    s = s & "       WORKING-STORAGE SECTION." & vbLf
+    s = s & "       01  W-EOF   PIC X(01)." & vbLf
+    s = s & "       01  FD-KBN  PIC X(01)." & vbLf
+    s = s & "       01  F-MAS1  PIC X(01)." & vbLf
+    s = s & "       01  W-OUT   PIC X(02)." & vbLf
+    s = s & "       PROCEDURE DIVISION." & vbLf
+    s = s & "       MAIN-PROC SECTION." & vbLf
+    s = s & "       MAIN-000." & vbLf
+    s = s & "           MOVE ' ' TO F-MAS1." & vbLf
+    s = s & "           IF W-EOF = '1'" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               CONTINUE" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               MOVE FD-KBN TO F-MAS1" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "           IF F-MAS1 = 'B'" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               MOVE 'BB' TO W-OUT" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               MOVE 'KK' TO W-OUT" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "           GOBACK." & vbLf
+
+    Dim flow As OrderedDict
+    Set flow = CobolFlow.Analyze_Flow(s, New Collection)
+    TestRunner.Assert_Equal CLng(4), CLng(flow.Item("arms").Count), "unset-steer: 4 arms"
+
+    Dim a As OrderedDict, c As OrderedDict, v As Variant, covered As Boolean, uncov As Long
+    For Each a In flow.Item("arms")
+        covered = False
+        For Each c In flow.Item("cases")
+            For Each v In c.Item("arms")
+                If CStr(v) = CStr(a.Item("Token")) Then covered = True
+            Next v
+        Next c
+        If Not covered Then uncov = uncov + 1
+    Next a
+    TestRunner.Assert_Equal CLng(0), uncov, _
+        "DB-flag arm covered via unset steering (no literal 'B' site)"
+    TestRunner.Assert_Equal CLng(2), CLng(flow.Item("cases").Count), "unset-steer: 2 cases"
 End Sub
 
 ' (a) loop-form PERFORM (VARYING/UNTIL/TIMES) bodies are inlined once, so

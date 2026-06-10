@@ -58,7 +58,14 @@ Private mCurTok As String          ' walk identity (for synth re-walk specs)
 ' (covers the common COBOL flag idiom: a sibling branch sets the flag a
 ' later IF/EVALUATE tests).
 Private mAssignCtx As OrderedDict  ' "ITEM=VAL" -> reach ctx of a MOVE site
+Private mUnsetCtx As OrderedDict   ' ITEM -> reach ctx of a site making it unknown
 Private mArmSteer As OrderedDict   ' arm token -> {Item, Val, Mode eq/ne}
+' uncovered-arm diagnostics (reason codes; the matrix renders them in JP):
+'   "noctx"           - arm has no reach context (never seen by the ctx walk)
+'   "conflict|<cond>" - required arm infeasible under propagated constants
+'   "dead"            - walk died before reaching a terminator
+Private mArmDiag As OrderedDict
+Private mMissCond As String        ' condition that blocked the current walk
 
 Private mNodes As Collection      ' AST root nodes
 Private mOwners As Collection     ' {name,line,kind,ownerEnd,secEnd} sorted
@@ -181,16 +188,27 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
             If rounds > arms.Count Then Exit Do
         Loop
 
-        Dim a As OrderedDict
+        Dim a As OrderedDict, tok As String
+        Set mArmDiag = New OrderedDict
         For Each a In arms
-            If Not covered.Exists(CStr(a.Item("Token"))) Then
-                If mArmCtx.Exists(CStr(a.Item("Token"))) Then
-                    Set w = WalkTo_(CStr(a.Item("Token")), False, entry, secLabels)
-                    If CStr(w.Item("Term")) <> "" And Not CBool(w.Item("Missed")) Then AddCand_ cands, covered, w
+            tok = CStr(a.Item("Token"))
+            If Not covered.Exists(tok) Then
+                If Not mArmCtx.Exists(tok) Then
+                    mArmDiag.Add tok, "noctx"
+                Else
+                    Set w = WalkTo_(tok, False, entry, secLabels)
+                    If CStr(w.Item("Term")) <> "" And Not CBool(w.Item("Missed")) Then
+                        AddCand_ cands, covered, w
+                    ElseIf CBool(w.Item("Missed")) And Len(mMissCond) > 0 Then
+                        mArmDiag.Add tok, "conflict|" & mMissCond
+                    Else
+                        mArmDiag.Add tok, "dead"
+                    End If
                 End If
             End If
         Next a
     End If
+    If mArmDiag Is Nothing Then Set mArmDiag = New OrderedDict
 
     ' split normal / abend candidates
     Dim normals As Collection, abends As Collection, tr As OrderedDict
@@ -233,6 +251,7 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
     result.Add "truncated", mTruncated
     result.Add "descMap", mDesc   ' item -> descendants (for downstream IO derivation)
     result.Add "termsApplied", termsApplied
+    result.Add "armDiag", mArmDiag   ' uncovered-arm reason codes (matrix)
     If entry Is Nothing Then
         result.Add "entryName", ""
     Else
@@ -295,6 +314,7 @@ Private Function TryWalk_(ByVal token As String, ByVal prefElse As Boolean, _
     End If
     mPrefElse = prefElse
     mMissed = False
+    mMissCond = ""
     mCurTok = token
     mSweep = False
     Set mReplayList = Nothing
@@ -392,8 +412,15 @@ Private Function SteerChain_(ByVal token As String) As Collection
             End If
         Next v
     End If
-    If Len(key) = 0 Then Exit Function
-    Set SteerChain_ = mAssignCtx.Item(key)
+    If Len(key) > 0 Then
+        Set SteerChain_ = mAssignCtx.Item(key)
+        Exit Function
+    End If
+    ' unset-steering fallback: no literal site matches, but a site that
+    ' makes the item UNKNOWN unblocks the constant-propagation conflict
+    If mUnsetCtx.Exists(CStr(si.Item("Item"))) Then
+        Set SteerChain_ = mUnsetCtx.Item(CStr(si.Item("Item")))
+    End If
 End Function
 
 ' literal-equality steering info for an IF node's arms. "Val" carries a
@@ -458,28 +485,53 @@ Private Sub AddSteer_(ByVal token As String, ByVal item As String, ByVal val As 
     mArmSteer.Add token, s
 End Sub
 
-' record literal MOVE sites with their reach context (first site wins)
+' record assignment sites with their reach context (first site wins):
+' literal MOVEs feed value steering; non-literal MOVE / INITIALIZE make the
+' item UNKNOWN and feed the unset-steering fallback (the common DB-flag
+' idiom: MOVE <record-field> TO F-XXX in a sibling branch).
 Private Sub RegisterAssign_(ByVal lbl As String, ByVal ctx As Collection)
-    Static rxML As Object
+    Static rxML As Object, rxMA As Object
     If rxML Is Nothing Then
         Set rxML = CreateObject("VBScript.RegExp")
         rxML.Pattern = "^MOVE\s+('[^']*'|[0-9]+|ZEROS?|ZEROES|SPACES?)\s+TO\s+([A-Z0-9-]+(\s+[A-Z0-9-]+)*)$"
         rxML.IgnoreCase = False
+        Set rxMA = CreateObject("VBScript.RegExp")
+        rxMA.Pattern = "^MOVE\s+(.+?)\s+TO\s+([A-Z0-9-]+(\s+[A-Z0-9-]+)*)$"
+        rxMA.IgnoreCase = False
+    End If
+    Dim m As Object, dts() As String, i As Long, k As String
+    If Left$(lbl, 11) = "INITIALIZE " Then
+        k = Trim$(Mid$(lbl, 12))
+        i = InStr(k, " ")
+        If i > 0 Then k = Left$(k, i - 1)
+        If Len(k) > 0 Then
+            If Not mUnsetCtx.Exists(k) Then mUnsetCtx.Add k, CopyCtx_(ctx)
+        End If
+        Exit Sub
     End If
     If Left$(lbl, 5) <> "MOVE " Then Exit Sub
-    Dim m As Object
     Set m = rxML.Execute(lbl)
-    If m.Count = 0 Then Exit Sub
-    Dim lit As String
-    If Not GetLiteral_(m.Item(0).SubMatches(0), lit) Then Exit Sub
-    Dim dts() As String, i As Long, k As String
-    dts = Split(Trim$(m.Item(0).SubMatches(1)), " ")
-    For i = LBound(dts) To UBound(dts)
-        If Len(Trim$(dts(i))) > 0 Then
-            k = Trim$(dts(i)) & "=" & NormVal_(lit)
-            If Not mAssignCtx.Exists(k) Then mAssignCtx.Add k, CopyCtx_(ctx)
-        End If
-    Next i
+    If m.Count > 0 Then
+        Dim lit As String
+        If Not GetLiteral_(m.Item(0).SubMatches(0), lit) Then Exit Sub
+        dts = Split(Trim$(m.Item(0).SubMatches(1)), " ")
+        For i = LBound(dts) To UBound(dts)
+            If Len(Trim$(dts(i))) > 0 Then
+                k = Trim$(dts(i)) & "=" & NormVal_(lit)
+                If Not mAssignCtx.Exists(k) Then mAssignCtx.Add k, CopyCtx_(ctx)
+            End If
+        Next i
+        Exit Sub
+    End If
+    Set m = rxMA.Execute(lbl)
+    If m.Count > 0 Then
+        dts = Split(Trim$(m.Item(0).SubMatches(1)), " ")
+        For i = LBound(dts) To UBound(dts)
+            If Len(Trim$(dts(i))) > 0 Then
+                If Not mUnsetCtx.Exists(Trim$(dts(i))) Then mUnsetCtx.Add Trim$(dts(i)), CopyCtx_(ctx)
+            End If
+        Next i
+    End If
 End Sub
 
 Private Function CopyCtx_(ByVal ctx As Collection) As Collection
@@ -511,6 +563,7 @@ Private Sub BuildArmCtx_(ByVal entry As OrderedDict, ByVal secLabels As OrderedD
     Set mArmCtx = New OrderedDict
     Set mCtxVisited = New OrderedDict
     Set mAssignCtx = New OrderedDict
+    Set mUnsetCtx = New OrderedDict
     Set mArmSteer = New OrderedDict
     Dim stack As Collection
     Set stack = New Collection
@@ -1375,6 +1428,7 @@ Private Function ApplyOne_(ByVal node As OrderedDict, ByVal stack As Collection,
                         armSel = "T"
                     Else
                         mMissed = True
+                        mMissCond = CStr(node.Item("condition"))
                         If okE Then armSel = "E"
                     End If
                 ElseIf mNeed.Exists(tkE) Then
@@ -1382,6 +1436,7 @@ Private Function ApplyOne_(ByVal node As OrderedDict, ByVal stack As Collection,
                         armSel = "E"
                     Else
                         mMissed = True
+                        mMissCond = CStr(node.Item("condition"))
                         If okT Then armSel = "T"
                     End If
                 ElseIf mSweep Then
@@ -1827,10 +1882,12 @@ Private Sub ApplyEvaluate_(ByVal node As OrderedDict, ByVal stack As Collection,
                 selIdx = needIdx
             Else
                 mMissed = True
+                mMissCond = expr & " = " & CStr(cs(needIdx).Item("condition"))
             End If
         ElseIf needSkip Then
             If hasOther Or (litAll And matchedIdx > 0) Then
                 mMissed = True
+                mMissCond = expr & " = (no match)"
             Else
                 selSkip = True
             End If
