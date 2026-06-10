@@ -33,9 +33,13 @@ Private Sub RenderCases_(ByVal flow As OrderedDict)
     ws.Cells.Clear
     ws.Columns("A:B").NumberFormat = "@"
 
+    ' title band: dark navy with white text (JP corporate sheet style)
     ws.Range("A1").Value = "テストケース候補（分岐網羅 C1 ／ ロジック階層(実行順展開)のケース標記・分岐カバレッジ表と対応）"
-    With ws.Range("A1").Font
-        .Bold = True: .Size = 13: .Color = RGB(38, 70, 83)
+    With ws.Range("A1")
+        .Interior.Color = RGB(31, 78, 121)
+        .Font.Bold = True
+        .Font.Size = 13
+        .Font.Color = RGB(255, 255, 255)
     End With
     ' which terminator sections were applied (auto/manual) - keep it visible
     ws.Cells(2, 1).Value = TermsNote_(flow)
@@ -61,19 +65,21 @@ Private Function RenderCaseBlock_(ByVal ws As Worksheet, ByVal c As OrderedDict,
     Dim row As Long
     row = startRow
 
+    ' case band: deep green (normal) / gray (out-of-scope), white text
     Dim kindJp As String, hdrColor As Long, isNormal As Boolean
     isNormal = (CStr(c.Item("kind")) = "normal")
     If isNormal Then
         kindJp = "正常系シナリオ" & CLng(c.Item("kindSerial"))
-        hdrColor = RGB(217, 234, 211)
+        hdrColor = RGB(55, 86, 35)
     Else
         kindJp = "異常系シナリオ" & CLng(c.Item("kindSerial"))
-        hdrColor = RGB(217, 217, 217)
+        hdrColor = RGB(89, 89, 89)
     End If
 
     ws.Cells(row, 1).Value = ChrW$(&H25A0) & " " & CStr(c.Item("id")) & "（" & kindJp & "）　　終了形態: " & TermJp_(c)
     With ws.Cells(row, 1)
         .Font.Bold = True
+        .Font.Color = RGB(255, 255, 255)
         .Interior.Color = hdrColor
     End With
     row = row + 1
@@ -113,7 +119,11 @@ Private Function RenderCaseBlock_(ByVal ws As Worksheet, ByVal c As OrderedDict,
                     txt = "【" & CStr(e.Item("Text")) & "】"
                 End If
                 ws.Cells(row, 1).Value = txt
-                ws.Cells(row, 1).Font.Bold = True
+                With ws.Cells(row, 1)
+                    .Font.Bold = True
+                    .Font.Color = RGB(31, 78, 121)
+                    .Interior.Color = RGB(220, 230, 241)
+                End With
                 row = row + 1
             Case "exec", "call"
                 ws.Cells(row, 1).Value = "　　" & CStr(e.Item("Text"))
@@ -129,7 +139,11 @@ Private Function RenderCaseBlock_(ByVal ws As Worksheet, ByVal c As OrderedDict,
                 End If
             Case "term"
                 ws.Cells(row, 1).Value = "　終了　（" & TermJp_(c) & "）"
-                ws.Cells(row, 1).Font.Bold = True
+                With ws.Cells(row, 1)
+                    .Font.Bold = True
+                    .Borders(xlEdgeTop).LineStyle = xlContinuous
+                    .Borders(xlEdgeTop).Color = RGB(55, 86, 35)
+                End With
                 row = row + 1
         End Select
 NextEv:
@@ -191,8 +205,11 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
     ws.Columns(1).NumberFormat = "@"
 
     ws.Range("A1").Value = "分岐カバレッジ表（行 = 検証Point（分岐アーム） ／ 列 = テストケース ／ " & ChrW$(&H25CB) & " = 通過）"
-    With ws.Range("A1").Font
-        .Bold = True: .Size = 13: .Color = RGB(38, 70, 83)
+    With ws.Range("A1")
+        .Interior.Color = RGB(31, 78, 121)
+        .Font.Bold = True
+        .Font.Size = 13
+        .Font.Color = RGB(255, 255, 255)
     End With
     ws.Range("A2").Value = "※ どのケースにも通過されない行（全空行）は赤 = 漏れ。恒真/恒偽の分岐（デッドコード）もここに現れます。"
     ws.Range("A2").Font.Color = RGB(120, 120, 120)
@@ -211,14 +228,21 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
         ci = ci + 1
         ws.Cells(hdr, 2 + ci).Value = CStr(c.Item("id"))
     Next c
+    ' column header: dark blue band, white text; TC numbers centered
     With ws.Range(ws.Cells(hdr, 1), ws.Cells(hdr, 2 + cases.Count))
         .Font.Bold = True
-        .Interior.Color = RGB(217, 225, 232)
+        .Font.Color = RGB(255, 255, 255)
+        .Interior.Color = RGB(46, 91, 143)
     End With
+    ws.Range(ws.Cells(hdr, 2), ws.Cells(hdr, 2 + cases.Count)).HorizontalAlignment = xlCenter
 
     Dim row As Long, a As OrderedDict, hit As Boolean, anyHit As Boolean, v As Variant
     row = hdr + 1
     For Each a In flow.Item("arms")
+        ' zebra banding on alternate rows (overridden by the red NG fill)
+        If ((row - hdr) Mod 2) = 0 Then
+            ws.Range(ws.Cells(row, 1), ws.Cells(row, 2 + cases.Count)).Interior.Color = RGB(242, 244, 247)
+        End If
         ws.Cells(row, 1).Value = CStr(a.Item("Disp"))
         On Error Resume Next
         ' HYPERLINK formula instead of Hyperlinks.Add: same click-to-jump,
@@ -253,14 +277,23 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
     Next a
 
     If row > hdr + 1 Then
-        With ws.Range(ws.Cells(hdr + 1, 2), ws.Cells(row - 1, 2)).Font
-            .Color = RGB(5, 99, 193)
-            .Underline = True
+        With ws.Range(ws.Cells(hdr + 1, 2), ws.Cells(row - 1, 2))
+            .Font.Color = RGB(5, 99, 193)
+            .Font.Underline = True
+            .HorizontalAlignment = xlCenter
+        End With
+        ' full grid (one range-level call - cheap regardless of row count)
+        With ws.Range(ws.Cells(hdr, 1), ws.Cells(row - 1, 2 + cases.Count)).Borders
+            .LineStyle = xlContinuous
+            .Color = RGB(184, 188, 196)
+            .Weight = xlThin
         End With
     End If
 
     ' footer: 系 / 終了形態 / 対象
+    Dim ftrTop As Long
     row = row + 1
+    ftrTop = row
     ws.Cells(row, 1).Value = "系"
     ws.Cells(row, 1).Font.Bold = True
     ci = 0
@@ -294,6 +327,15 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
             ws.Cells(row, 2 + ci).Font.Color = RGB(120, 120, 120)
         End If
     Next c
+
+    ' footer block: light gray band + centered values + grid
+    With ws.Range(ws.Cells(ftrTop, 1), ws.Cells(row, 2 + cases.Count))
+        .Interior.Color = RGB(231, 233, 236)
+        .Borders.LineStyle = xlContinuous
+        .Borders.Color = RGB(184, 188, 196)
+        .Borders.Weight = xlThin
+    End With
+    ws.Range(ws.Cells(ftrTop, 3), ws.Cells(row, 2 + cases.Count)).HorizontalAlignment = xlCenter
 
     ws.Columns("A").ColumnWidth = 56
     ws.Columns("B").ColumnWidth = 6

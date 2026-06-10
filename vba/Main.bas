@@ -311,6 +311,14 @@ Public Sub AnalyzeAndBuild(ByVal cblPath As String)
         On Error GoTo 0
     End If
 
+    ' reference sheets the team rarely opens go to the end of the tab order
+    On Error Resume Next
+    Dim shMove As Variant
+    For Each shMove In Array("分岐カバレッジ", "呼出関係", "呼出関係図")
+        ThisWorkbook.Sheets(CStr(shMove)).Move After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count)
+    Next shMove
+    On Error GoTo 0
+
     On Error Resume Next
     Kill jsonPath
     On Error GoTo 0

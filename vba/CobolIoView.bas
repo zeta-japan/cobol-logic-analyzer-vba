@@ -375,9 +375,13 @@ Public Sub BuildIoSheet(ByVal flow As OrderedDict, ByVal src As String)
     Dim model As Collection
     Set model = BuildIoModel(flow, src)
 
+    ' title band: dark navy with white text (JP corporate sheet style)
     ws.Range("A1").Value = "入出力-想定結果（正常系ケース毎の入力設定と出力想定値 ／ Driver雛形・テストケース候補と対応）"
-    With ws.Range("A1").Font
-        .Bold = True: .Size = 13: .Color = RGB(38, 70, 83)
+    With ws.Range("A1")
+        .Interior.Color = RGB(31, 78, 121)
+        .Font.Bold = True
+        .Font.Size = 13
+        .Font.Color = RGB(255, 255, 255)
     End With
     ws.Range("A2").Value = "※ 設定値が静的に決まらない項目は条件を表示しています。実測値・判定はテスト時に記入してください。"
     ws.Range("A2").Font.Color = RGB(120, 120, 120)
@@ -405,6 +409,7 @@ Fail_:
     eN = Err.Number
     eD = Err.Description
     On Error Resume Next
+    ws.Cells(1, 1).Interior.ColorIndex = xlNone   ' clear the navy band for readable red text
     ws.Cells(1, 1).Value = "(診断: 入出力-想定結果の生成でエラー #" & eN & " " & eD & ")"
     ws.Cells(1, 1).Font.Color = RGB(192, 0, 0)
 Done_:
@@ -422,13 +427,17 @@ Private Function RenderCaseIo_(ByVal ws As Worksheet, ByVal cm As OrderedDict, B
     Dim row As Long
     row = startRow
 
+    ' case band: deep green with white text (same meaning-color as the
+    ' normal-case bands on テストケース候補)
     ws.Cells(row, 1).Value = ChrW$(&H25A0) & " " & CStr(cm.Item("id")) & "（正常系シナリオ" & CLng(cm.Item("kindSerial")) & "）　　終了形態: " & CStr(cm.Item("termJp"))
     With ws.Range(ws.Cells(row, 1), ws.Cells(row, 5))
-        .Interior.Color = RGB(217, 234, 211)
+        .Interior.Color = RGB(55, 86, 35)
+        .Font.Color = RGB(255, 255, 255)
     End With
     ws.Cells(row, 1).Font.Bold = True
     row = row + 1
 
+    ' column header: dark blue band with white text
     ws.Cells(row, 1).Value = "分類"
     ws.Cells(row, 2).Value = "項目／内容"
     ws.Cells(row, 3).Value = "設定値・想定値"
@@ -436,9 +445,13 @@ Private Function RenderCaseIo_(ByVal ws As Worksheet, ByVal cm As OrderedDict, B
     ws.Cells(row, 5).Value = "判定（記入）"
     With ws.Range(ws.Cells(row, 1), ws.Cells(row, 5))
         .Font.Bold = True
-        .Interior.Color = RGB(217, 225, 232)
+        .Font.Color = RGB(255, 255, 255)
+        .Interior.Color = RGB(46, 91, 143)
     End With
+    ws.Range(ws.Cells(row, 4), ws.Cells(row, 5)).HorizontalAlignment = xlCenter
     row = row + 1
+    Dim gridTop As Long
+    gridTop = row
 
     Dim r As OrderedDict, v As Variant
     For Each r In cm.Item("lkIn")
@@ -457,6 +470,14 @@ Private Function RenderCaseIo_(ByVal ws As Worksheet, ByVal cm As OrderedDict, B
         PutText_ ws, row, 3, CStr(v)
         row = row + 1
     Next v
+    ' input-class column band (light blue, navy text)
+    If row > gridTop Then
+        With ws.Range(ws.Cells(gridTop, 1), ws.Cells(row - 1, 1))
+            .Interior.Color = RGB(220, 230, 241)
+            .Font.Color = RGB(31, 78, 121)
+            .Font.Bold = True
+        End With
+    End If
     If cm.Item("lkIn").Count = 0 And cm.Item("dbPre").Count = 0 And cm.Item("subPre").Count = 0 Then
         ws.Cells(row, 1).Value = "入力"
         ws.Cells(row, 3).Value = "（特記事項なし）"
@@ -465,18 +486,20 @@ Private Function RenderCaseIo_(ByVal ws As Worksheet, ByVal cm As OrderedDict, B
 
     For Each r In cm.Item("outs")
         ws.Cells(row, 1).Value = "出力"
-        ws.Cells(row, 1).Font.Color = RGB(0, 112, 192)
+        With ws.Cells(row, 1)
+            .Font.Color = RGB(31, 95, 165)
+            .Font.Bold = True
+        End With
         ws.Cells(row, 2).Value = CStr(r.Item("Item"))
         PutText_ ws, row, 3, CStr(r.Item("Val"))
-        With ws.Range(ws.Cells(row, 4), ws.Cells(row, 5))
-            .Interior.Color = RGB(255, 255, 230)
-            .Borders.LineStyle = xlContinuous
-            .Borders.Color = RGB(200, 200, 200)
-        End With
+        ws.Range(ws.Cells(row, 4), ws.Cells(row, 5)).Interior.Color = RGB(255, 253, 231)
         row = row + 1
     Next r
     ws.Cells(row, 1).Value = "出力"
-    ws.Cells(row, 1).Font.Color = RGB(0, 112, 192)
+    With ws.Cells(row, 1)
+        .Font.Color = RGB(31, 95, 165)
+        .Font.Bold = True
+    End With
     ws.Cells(row, 2).Value = "終了形態"
     ws.Cells(row, 3).Value = CStr(cm.Item("termJp"))
     row = row + 1
@@ -490,6 +513,13 @@ Private Function RenderCaseIo_(ByVal ws As Worksheet, ByVal cm As OrderedDict, B
         ws.Cells(row, 3).Font.Color = RGB(120, 120, 120)
         row = row + 1
     Next r
+
+    ' block grid (header band through the last row, one range call)
+    With ws.Range(ws.Cells(gridTop - 1, 1), ws.Cells(row - 1, 5)).Borders
+        .LineStyle = xlContinuous
+        .Color = RGB(184, 188, 196)
+        .Weight = xlThin
+    End With
 
     RenderCaseIo_ = row
 End Function
