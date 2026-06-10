@@ -10,6 +10,74 @@ Option Explicit
 Public Sub Run_All()
     TestRunner.Run_One "Test_Flow_ICASE3"
     TestRunner.Run_One "Test_Flow_CopyTolerance"
+    TestRunner.Run_One "Test_Flow_LoopAndFlag"
+End Sub
+
+' ver3.1: (a) loop-form PERFORM (VARYING/UNTIL/TIMES) bodies are inlined
+' once, so their branch arms are reachable; (b) the flag idiom (a sibling
+' branch MOVEs a literal a later IF tests) is covered via the value-driven
+' steering retry. Expectations from the ver4 oracle on the same source
+' (BIGCASE2): 6 arms, every arm covered, 2 normal cases.
+Public Sub Test_Flow_LoopAndFlag()
+    Dim s As String
+    s = ""
+    s = s & "       WORKING-STORAGE SECTION." & vbLf
+    s = s & "       01  W-IN    PIC X(01)." & vbLf
+    s = s & "       01  F-MAS1  PIC X(01)." & vbLf
+    s = s & "       01  T-VAL   PIC 9(01)." & vbLf
+    s = s & "       01  W-OUT   PIC X(02)." & vbLf
+    s = s & "       01  I-IDX   PIC 9(02)." & vbLf
+    s = s & "       PROCEDURE DIVISION." & vbLf
+    s = s & "       MAIN-PROC SECTION." & vbLf
+    s = s & "       MAIN-000." & vbLf
+    s = s & "           PERFORM SETUP-SEC." & vbLf
+    s = s & "           PERFORM LOOP-SEC VARYING I-IDX FROM 1 BY 1" & vbLf
+    s = s & "               UNTIL I-IDX > 20." & vbLf
+    s = s & "           IF F-MAS1 = 'B'" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               MOVE 'BB' TO W-OUT" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               MOVE 'KK' TO W-OUT" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "           GOBACK." & vbLf
+    s = s & "       SETUP-SEC SECTION." & vbLf
+    s = s & "       SETUP-000." & vbLf
+    s = s & "           IF W-IN = '1'" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               MOVE 'B' TO F-MAS1" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               MOVE 'K' TO F-MAS1" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "       SETUP-999." & vbLf
+    s = s & "           EXIT." & vbLf
+    s = s & "       LOOP-SEC SECTION." & vbLf
+    s = s & "       LOOP-000." & vbLf
+    s = s & "           IF T-VAL = 0" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               MOVE 'X1' TO W-OUT" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               MOVE 'Y1' TO W-OUT" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "       LOOP-999." & vbLf
+    s = s & "           EXIT." & vbLf
+
+    Dim flow As OrderedDict
+    Set flow = CobolFlow.Analyze_Flow(s, New Collection)
+    TestRunner.Assert_Equal CLng(6), CLng(flow.Item("arms").Count), "loop+flag: 6 arms"
+
+    Dim a As OrderedDict, c As OrderedDict, v As Variant, covered As Boolean, uncov As Long
+    For Each a In flow.Item("arms")
+        covered = False
+        For Each c In flow.Item("cases")
+            For Each v In c.Item("arms")
+                If CStr(v) = CStr(a.Item("Token")) Then covered = True
+            Next v
+        Next c
+        If Not covered Then uncov = uncov + 1
+    Next a
+    TestRunner.Assert_Equal CLng(0), uncov, _
+        "loop bodies inlined + flag idiom steered: every arm covered"
+    TestRunner.Assert_Equal CLng(2), CLng(flow.Item("cases").Count), "loop+flag: 2 cases"
 End Sub
 
 ' Regression: real sources are full of COPY ... PREFIXING lines, whose data

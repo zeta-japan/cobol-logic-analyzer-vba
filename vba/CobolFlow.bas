@@ -51,6 +51,13 @@ Private mStopAtCall As String      ' pass 2 synth: end the walk at this CALL
 Private mArmCtx As OrderedDict     ' arm token -> Collection of ancestor tokens
 Private mCtxVisited As OrderedDict ' sections already context-walked
 Private mCurTok As String          ' walk identity (for synth re-walk specs)
+' value-driven steering: when an arm tests ITEM against a literal and the
+' first walk is blocked by a propagated constant, retry once steering the
+' branch chain of a literal MOVE that establishes a satisfying value
+' (covers the common COBOL flag idiom: a sibling branch sets the flag a
+' later IF/EVALUATE tests).
+Private mAssignCtx As OrderedDict  ' "ITEM=VAL" -> reach ctx of a MOVE site
+Private mArmSteer As OrderedDict   ' arm token -> {Item, Val, Mode eq/ne}
 
 Private mNodes As Collection      ' AST root nodes
 Private mOwners As Collection     ' {name,line,kind,ownerEnd,secEnd} sorted
@@ -222,13 +229,37 @@ End Function
 ' reproduce it with events recorded.
 Private Function WalkTo_(ByVal token As String, ByVal prefElse As Boolean, _
                          ByVal entry As OrderedDict, ByVal secLabels As OrderedDict) As OrderedDict
+    Dim res As OrderedDict
+    Set res = TryWalk_(token, prefElse, entry, secLabels, Nothing)
+    ' value-driven retry (once): steer the branch chain of a literal MOVE
+    ' that satisfies the target arm's tested value (flag idiom)
+    If CBool(res.Item("Missed")) And Len(token) > 0 Then
+        Dim extra As Collection
+        Set extra = SteerChain_(token)
+        If Not extra Is Nothing Then
+            Dim res2 As OrderedDict
+            Set res2 = TryWalk_(token, prefElse, entry, secLabels, extra)
+            If Not CBool(res2.Item("Missed")) Then Set res = res2
+        End If
+    End If
+    Set WalkTo_ = res
+End Function
+
+Private Function TryWalk_(ByVal token As String, ByVal prefElse As Boolean, _
+                          ByVal entry As OrderedDict, ByVal secLabels As OrderedDict, _
+                          ByVal extraNeed As Collection) As OrderedDict
     Set mNeed = New OrderedDict
+    Dim v As Variant
     If Len(token) > 0 Then
-        Dim v As Variant
         For Each v In mArmCtx.Item(token)
             mNeed.Add CStr(v), True
         Next v
         mNeed.Add token, True
+    End If
+    If Not extraNeed Is Nothing Then
+        For Each v In extraNeed
+            mNeed.Add CStr(v), True
+        Next v
     End If
     mPrefElse = prefElse
     mMissed = False
@@ -257,7 +288,109 @@ Private Function WalkTo_(ByVal token As String, ByVal prefElse As Boolean, _
         If Not ArmOnTrace_(res, token) Then mMissed = True
     End If
     res.Add "Missed", mMissed
-    Set WalkTo_ = res
+    Set TryWalk_ = res
+End Function
+
+' the extra need-chain for a value-driven retry, or Nothing when the arm
+' has no literal steering info / no satisfying assignment site exists
+Private Function SteerChain_(ByVal token As String) As Collection
+    Set SteerChain_ = Nothing
+    If Not mArmSteer.Exists(token) Then Exit Function
+    Dim si As OrderedDict
+    Set si = mArmSteer.Item(token)
+    Dim key As String
+    key = ""
+    If CStr(si.Item("Mode")) = "eq" Then
+        If mAssignCtx.Exists(CStr(si.Item("Item")) & "=" & CStr(si.Item("Val"))) Then
+            key = CStr(si.Item("Item")) & "=" & CStr(si.Item("Val"))
+        End If
+    Else
+        ' any literal assignment of a DIFFERENT value to the same item
+        Dim ks As Collection, v As Variant, pre As String
+        pre = CStr(si.Item("Item")) & "="
+        Set ks = mAssignCtx.Keys
+        For Each v In ks
+            If Left$(CStr(v), Len(pre)) = pre Then
+                If CStr(v) <> pre & CStr(si.Item("Val")) Then
+                    key = CStr(v)
+                    Exit For
+                End If
+            End If
+        Next v
+    End If
+    If Len(key) = 0 Then Exit Function
+    Set SteerChain_ = mAssignCtx.Item(key)
+End Function
+
+' literal-equality steering info for an IF node's arms
+Private Sub SteerInfo_(ByVal cond As String, ByVal nodeId As String)
+    Dim c0 As String
+    c0 = Trim$(cond)
+    If InStr(c0, " AND ") > 0 Or InStr(c0, " OR ") > 0 Then Exit Sub
+    Static rxEq As Object, rxNe As Object
+    If rxEq Is Nothing Then
+        Set rxEq = CreateObject("VBScript.RegExp"): rxEq.Pattern = "^([A-Z0-9-]+)\s*=\s*(.+)$": rxEq.IgnoreCase = False
+        Set rxNe = CreateObject("VBScript.RegExp"): rxNe.Pattern = "^([A-Z0-9-]+)\s+NOT\s*=\s*(.+)$": rxNe.IgnoreCase = False
+    End If
+    Dim m As Object, lit As String
+    Set m = rxNe.Execute(c0)
+    If m.Count > 0 Then
+        If GetLiteral_(m.Item(0).SubMatches(1), lit) Then
+            AddSteer_ nodeId & ":then", m.Item(0).SubMatches(0), NormVal_(lit), "ne"
+            AddSteer_ nodeId & ":else", m.Item(0).SubMatches(0), NormVal_(lit), "eq"
+        End If
+        Exit Sub
+    End If
+    Set m = rxEq.Execute(c0)
+    If m.Count > 0 Then
+        If GetLiteral_(m.Item(0).SubMatches(1), lit) Then
+            AddSteer_ nodeId & ":then", m.Item(0).SubMatches(0), NormVal_(lit), "eq"
+            AddSteer_ nodeId & ":else", m.Item(0).SubMatches(0), NormVal_(lit), "ne"
+        End If
+    End If
+End Sub
+
+Private Sub AddSteer_(ByVal token As String, ByVal item As String, ByVal val As String, ByVal mode As String)
+    If mArmSteer.Exists(token) Then Exit Sub
+    Dim s As OrderedDict
+    Set s = New OrderedDict
+    s.Add "Item", item
+    s.Add "Val", val
+    s.Add "Mode", mode
+    mArmSteer.Add token, s
+End Sub
+
+' record literal MOVE sites with their reach context (first site wins)
+Private Sub RegisterAssign_(ByVal lbl As String, ByVal ctx As Collection)
+    Static rxML As Object
+    If rxML Is Nothing Then
+        Set rxML = CreateObject("VBScript.RegExp")
+        rxML.Pattern = "^MOVE\s+('[^']*'|[0-9]+|ZEROS?|ZEROES|SPACES?)\s+TO\s+([A-Z0-9-]+(\s+[A-Z0-9-]+)*)$"
+        rxML.IgnoreCase = False
+    End If
+    If Left$(lbl, 5) <> "MOVE " Then Exit Sub
+    Dim m As Object
+    Set m = rxML.Execute(lbl)
+    If m.Count = 0 Then Exit Sub
+    Dim lit As String
+    If Not GetLiteral_(m.Item(0).SubMatches(0), lit) Then Exit Sub
+    Dim dts() As String, i As Long, k As String
+    dts = Split(Trim$(m.Item(0).SubMatches(1)), " ")
+    For i = LBound(dts) To UBound(dts)
+        If Len(Trim$(dts(i))) > 0 Then
+            k = Trim$(dts(i)) & "=" & NormVal_(lit)
+            If Not mAssignCtx.Exists(k) Then mAssignCtx.Add k, CopyCtx_(ctx)
+        End If
+    Next i
+End Sub
+
+Private Function CopyCtx_(ByVal ctx As Collection) As Collection
+    Dim c As Collection, v As Variant
+    Set c = New Collection
+    For Each v In ctx
+        c.Add CStr(v)
+    Next v
+    Set CopyCtx_ = c
 End Function
 
 Private Function ArmOnTrace_(ByVal tr As OrderedDict, ByVal token As String) As Boolean
@@ -279,6 +412,8 @@ End Function
 Private Sub BuildArmCtx_(ByVal entry As OrderedDict, ByVal secLabels As OrderedDict)
     Set mArmCtx = New OrderedDict
     Set mCtxVisited = New OrderedDict
+    Set mAssignCtx = New OrderedDict
+    Set mArmSteer = New OrderedDict
     Dim stack As Collection
     Set stack = New Collection
     stack.Add CStr(entry.Item("name"))
@@ -293,15 +428,19 @@ Private Sub CtxWalk_(ByVal list As Collection, ByVal stack As Collection, ByVal 
         If t = "if" Then
             RegisterCtx_ CStr(n.Item("id")) & ":then", ctx
             RegisterCtx_ CStr(n.Item("id")) & ":else", ctx
+            SteerInfo_ CStr(n.Item("condition")), CStr(n.Item("id"))
             CtxWalk_ n.Item("thenChildren"), stack, CtxPlus_(ctx, CStr(n.Item("id")) & ":then")
             CtxWalk_ n.Item("elseChildren"), stack, CtxPlus_(ctx, CStr(n.Item("id")) & ":else")
         ElseIf t = "evaluate" Then
-            Dim cs As Collection, wi As Long, hasOther As Boolean
+            Dim cs As Collection, wi As Long, hasOther As Boolean, wlit As String
             Set cs = n.Item("cases")
             hasOther = False
             For wi = 1 To cs.Count
                 RegisterCtx_ CStr(cs(wi).Item("id")), ctx
                 If CStr(cs(wi).Item("condition")) = "OTHER" Then hasOther = True
+                If GetLiteral_(CStr(cs(wi).Item("condition")), wlit) Then
+                    AddSteer_ CStr(cs(wi).Item("id")), CStr(n.Item("expression")), NormVal_(wlit), "eq"
+                End If
                 CtxWalk_ cs(wi).Item("children"), stack, CtxPlus_(ctx, CStr(cs(wi).Item("id")))
             Next wi
             If Not hasOther Then RegisterCtx_ CStr(n.Item("id")) & ":skip", ctx
@@ -320,33 +459,70 @@ Private Sub CtxWalk_(ByVal list As Collection, ByVal stack As Collection, ByVal 
             Next si
         ElseIf t = "action" Then
             CtxPerform_ CStr(n.Item("label")), stack, ctx
+            RegisterAssign_ CStr(n.Item("label")), ctx
         End If
     Next n
 End Sub
 
-' inline-expand a plain PERFORM (or PERFORM..THRU) during the context walk
-Private Sub CtxPerform_(ByVal lbl As String, ByVal stack As Collection, ByVal ctx As Collection)
-    If Left$(lbl, 8) <> "PERFORM " Then Exit Sub
-    Dim rest As String, tgt As String, thru As String, p As Long
+' parse "PERFORM tgt [THRU y] [loop tail]" - True when the body should be
+' inlined. Loop forms (VARYING / UNTIL / n TIMES) are walked ONCE: the
+' standard static approximation that makes loop-body branches reachable
+' (previously they were skipped entirely, leaving every arm inside
+' loop-performed paragraphs uncovered).
+Private Function ParsePerform_(ByVal lbl As String, ByRef tgt As String, ByRef thru As String) As Boolean
+    ParsePerform_ = False
+    If Left$(lbl, 8) <> "PERFORM " Then Exit Function
+    Dim rest As String, p As Long, tail As String
     rest = Mid$(lbl, 9)
+    thru = ""
     p = InStr(rest, " ")
     If p = 0 Then
         tgt = rest
-        thru = ""
-    Else
-        tgt = Left$(rest, p - 1)
-        Dim tail As String
-        tail = Mid$(rest, p + 1)
-        If Left$(tail, 5) = "THRU " Then
-            thru = Mid$(tail, 6)
-        ElseIf Left$(tail, 8) = "THROUGH " Then
-            thru = Mid$(tail, 9)
-        Else
-            Exit Sub   ' PERFORM ... UNTIL/VARYING: generic action, not inlined
-        End If
-        p = InStr(thru, " ")
-        If p > 0 Then thru = Left$(thru, p - 1)
+        ParsePerform_ = True
+        Exit Function
     End If
+    tgt = Left$(rest, p - 1)
+    tail = Mid$(rest, p + 1)
+    If Left$(tail, 5) = "THRU " Then
+        thru = Mid$(tail, 6)
+    ElseIf Left$(tail, 8) = "THROUGH " Then
+        thru = Mid$(tail, 9)
+    ElseIf IsLoopTail_(tail) Then
+        ParsePerform_ = True
+        Exit Function
+    Else
+        Exit Function   ' inline PERFORM block etc: stays a generic action
+    End If
+    p = InStr(thru, " ")
+    If p > 0 Then
+        tail = Mid$(thru, p + 1)
+        thru = Left$(thru, p - 1)
+        If Not IsLoopTail_(tail) Then Exit Function
+    End If
+    ParsePerform_ = True
+End Function
+
+Private Function IsLoopTail_(ByVal tail As String) As Boolean
+    IsLoopTail_ = False
+    If Left$(tail, 8) = "VARYING " Or Left$(tail, 6) = "UNTIL " Then
+        IsLoopTail_ = True
+        Exit Function
+    End If
+    If tail = "TIMES" Then
+        IsLoopTail_ = True
+        Exit Function
+    End If
+    Dim p As Long
+    p = InStr(tail, " ")
+    If p > 0 Then
+        If Mid$(tail, p + 1, 5) = "TIMES" And IsNumeric(Left$(tail, p - 1)) Then IsLoopTail_ = True
+    End If
+End Function
+
+' inline-expand a PERFORM (plain / THRU / loop form) during the context walk
+Private Sub CtxPerform_(ByVal lbl As String, ByVal stack As Collection, ByVal ctx As Collection)
+    Dim tgt As String, thru As String
+    If Not ParsePerform_(lbl, tgt, thru) Then Exit Sub
     If mTermSecs.Exists(tgt) Then Exit Sub
     If OnStack_(stack, tgt) Then Exit Sub
     If mCtxVisited.Exists(tgt) Then Exit Sub
@@ -1139,11 +1315,9 @@ End Sub
 
 Private Sub ApplyAction_(ByVal node As OrderedDict, ByVal stack As Collection, ByVal tr As OrderedDict, _
                          ByVal out As Collection, ByVal secLabels As OrderedDict)
-    Static rxPerf As Object, rxThru As Object, rxCall As Object, rxMove As Object
+    Static rxCall As Object, rxMove As Object
     Static rxComp As Object, rxStr As Object, rxInit As Object, rxAcc As Object
-    If rxPerf Is Nothing Then
-        Set rxPerf = CreateObject("VBScript.RegExp"): rxPerf.Pattern = "^PERFORM\s+([A-Z0-9][A-Z0-9-]*)$": rxPerf.IgnoreCase = False
-        Set rxThru = CreateObject("VBScript.RegExp"): rxThru.Pattern = "^PERFORM\s+([A-Z0-9][A-Z0-9-]*)\s+THR(U|OUGH)\s+([A-Z0-9][A-Z0-9-]*)": rxThru.IgnoreCase = False
+    If rxCall Is Nothing Then
         Set rxCall = CreateObject("VBScript.RegExp"): rxCall.Pattern = "^CALL\s+'([A-Z0-9-]+)'(\s+USING\s+(.+))?$": rxCall.IgnoreCase = False
         Set rxMove = CreateObject("VBScript.RegExp"): rxMove.Pattern = "^MOVE\s+(.+?)\s+TO\s+([A-Z0-9-]+(\s+[A-Z0-9-]+)*)$": rxMove.IgnoreCase = False
         Set rxComp = CreateObject("VBScript.RegExp"): rxComp.Pattern = "^COMPUTE\s+([A-Z0-9-]+)\s*=\s*(.+)$": rxComp.IgnoreCase = False
@@ -1184,16 +1358,10 @@ Private Sub ApplyAction_(ByVal node As OrderedDict, ByVal stack As Collection, B
     End Select
 
     If v1 = "PERFORM " Then
-        ' PERFORM x THRU y
-        Set m = rxThru.Execute(lbl)
-        If m.Count > 0 Then
-            PerformInto_ m.Item(0).SubMatches(0), m.Item(0).SubMatches(2), node, stack, tr, out, secLabels
-            Exit Sub
-        End If
-        ' PERFORM x
-        Set m = rxPerf.Execute(lbl)
-        If m.Count > 0 Then
-            PerformInto_ m.Item(0).SubMatches(0), "", node, stack, tr, out, secLabels
+        ' plain / THRU / loop form (loop bodies are inlined once)
+        Dim pTgt As String, pThru As String
+        If ParsePerform_(lbl, pTgt, pThru) Then
+            PerformInto_ pTgt, pThru, node, stack, tr, out, secLabels
             Exit Sub
         End If
     End If
