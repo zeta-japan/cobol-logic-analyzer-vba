@@ -66,10 +66,21 @@ Private mTermSecs As OrderedDict  ' registered terminator section names
 Private mDesc As OrderedDict      ' item -> Collection of descendant names
 Private mAnc As OrderedDict       ' item -> Collection of ancestor names
 Private mCondItems As OrderedDict ' identifiers used in any branch condition
-Private mSynth As OrderedDict     ' call target -> {Line, Target, NeedTok, PrefElse}
-                                  ' (first site + walk identity; the synth case is
-                                  '  reproduced by a pass-2 stop-at-call re-walk)
+Private mSynth As OrderedDict     ' call target -> {Line, Target, ArmsAt}
+                                  ' (first site + the arm prefix at that point;
+                                  '  pass 2 replays the prefix and stops at the call)
 Private mTruncated As Boolean
+' minimal-case sweep: each sweep walk grabs as many uncovered arms as it
+' can (direct pick at the branch, ancestor weights toward uncovered arms
+' elsewhere), so the candidate set stays near the optimal cover size.
+Private mSweep As Boolean
+Private mSweepUncov As OrderedDict ' arm tokens still uncovered this round
+Private mSweepW As OrderedDict     ' ancestor-token weights toward uncovered
+' pass-2 replay: reproduce a selected pass-1 walk EXACTLY by consuming its
+' recorded arm sequence at each branch (deterministic regardless of sweep
+' or steering state; also reproduces synthesized stop-at-call prefixes).
+Private mReplayList As Collection
+Private mReplayIdx As Long
 
 '======================================================================
 ' Public entry
@@ -136,26 +147,46 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
     Set arms = New Collection
     CollectArms_ mNodes, arms
 
-    ' pass 1: directed candidate walks (two seeds + one walk per arm),
-    ' arms/term only - no event recording, no forking, linear work
+    ' pass 1: candidate walks, arms/term only (no events, no forking).
+    ' two seeds, then sweep rounds that each grab as many uncovered arms
+    ' as possible (keeps the case count near the optimal cover), then a
+    ' targeted fallback walk per still-uncovered arm (abends / steering).
     Dim entry As OrderedDict
     Set entry = FindEntry_()
     Dim cands As Collection
     Set cands = New Collection
+    Dim covered As OrderedDict
+    Set covered = New OrderedDict
     Dim w As OrderedDict
     If Not entry Is Nothing And mNodes.Count > 0 Then
         BuildArmCtx_ entry, secLabels
         mRecordEvents = False
         mStopAtCall = ""
+        Set mReplayList = Nothing
         Set w = WalkTo_("", False, entry, secLabels)
-        If CStr(w.Item("Term")) <> "" Then cands.Add w
+        AddCand_ cands, covered, w
         Set w = WalkTo_("", True, entry, secLabels)
-        If CStr(w.Item("Term")) <> "" Then cands.Add w
+        AddCand_ cands, covered, w
+
+        Dim rounds As Long
+        rounds = 0
+        Do
+            If Not BuildSweepState_(arms, covered) Then Exit Do
+            Set w = SweepWalk_(entry, secLabels)
+            If CStr(w.Item("Term")) = "" Then Exit Do
+            If SweepGain_(w, covered) = 0 Then Exit Do
+            AddCand_ cands, covered, w
+            rounds = rounds + 1
+            If rounds > arms.Count Then Exit Do
+        Loop
+
         Dim a As OrderedDict
         For Each a In arms
-            If mArmCtx.Exists(CStr(a.Item("Token"))) Then
-                Set w = WalkTo_(CStr(a.Item("Token")), False, entry, secLabels)
-                If CStr(w.Item("Term")) <> "" And Not CBool(w.Item("Missed")) Then cands.Add w
+            If Not covered.Exists(CStr(a.Item("Token"))) Then
+                If mArmCtx.Exists(CStr(a.Item("Token"))) Then
+                    Set w = WalkTo_(CStr(a.Item("Token")), False, entry, secLabels)
+                    If CStr(w.Item("Term")) <> "" And Not CBool(w.Item("Missed")) Then AddCand_ cands, covered, w
+                End If
             End If
         Next a
     End If
@@ -175,7 +206,7 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
     Dim specs As Collection
     Set specs = SelectCases_(normals, abends, arms)
 
-    ' pass 2: re-walk each selected case with events recorded
+    ' pass 2: replay each selected case's exact arm sequence with events
     Dim cases As Collection
     Set cases = New Collection
     Dim sp As OrderedDict, w2 As OrderedDict
@@ -186,7 +217,7 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
         Else
             mStopAtCall = ""
         End If
-        Set w2 = WalkTo_(CStr(sp.Item("NeedTok")), CBool(sp.Item("PrefElse")), entry, secLabels)
+        Set w2 = ReplayWalk_(sp.Item("NeedList"), entry, secLabels)
         cases.Add BuildCase_(w2, CStr(sp.Item("Id")), CStr(sp.Item("Kind")), CLng(sp.Item("KindSerial")))
     Next sp
     mStopAtCall = ""
@@ -231,27 +262,6 @@ Private Function WalkTo_(ByVal token As String, ByVal prefElse As Boolean, _
                          ByVal entry As OrderedDict, ByVal secLabels As OrderedDict) As OrderedDict
     Dim res As OrderedDict
     Set res = TryWalk_(token, prefElse, entry, secLabels, Nothing)
-
-    ' synth (stop-at-call) re-walks have a different success criterion: the
-    ' walk must STOP AT THE CALL - the target arm being absent past the
-    ' truncation point is expected, so "Missed" must not trigger the value
-    ' retry on its own. If the first try did not reach the call (the synth
-    ' site was registered on a retry path in pass 1), retry once with the
-    ' steer chain and accept only a properly truncated result.
-    If Len(mStopAtCall) > 0 Then
-        If Left$(CStr(res.Item("Term")), 6) <> "synth:" And Len(token) > 0 Then
-            Dim extraS As Collection
-            Set extraS = SteerChain_(token)
-            If Not extraS Is Nothing Then
-                Dim resS As OrderedDict
-                Set resS = TryWalk_(token, prefElse, entry, secLabels, extraS)
-                If Left$(CStr(resS.Item("Term")), 6) = "synth:" Then Set res = resS
-            End If
-        End If
-        Set WalkTo_ = res
-        Exit Function
-    End If
-
     ' value-driven retry (once): steer the branch chain of a literal MOVE
     ' that satisfies the target arm's tested value (flag idiom)
     If CBool(res.Item("Missed")) And Len(token) > 0 Then
@@ -285,7 +295,49 @@ Private Function TryWalk_(ByVal token As String, ByVal prefElse As Boolean, _
     mPrefElse = prefElse
     mMissed = False
     mCurTok = token
+    mSweep = False
+    Set mReplayList = Nothing
 
+    Dim res As OrderedDict
+    Set res = RunWalk_(entry, secLabels)
+    If Len(token) > 0 And Not mMissed Then
+        If Not ArmOnTrace_(res, token) Then mMissed = True
+    End If
+    res.Add "Missed", mMissed
+    Set TryWalk_ = res
+End Function
+
+' sweep walk: no steering, choices driven by mSweepUncov/mSweepW
+Private Function SweepWalk_(ByVal entry As OrderedDict, ByVal secLabels As OrderedDict) As OrderedDict
+    Set mNeed = New OrderedDict
+    mPrefElse = False
+    mMissed = False
+    mCurTok = ""
+    Set mReplayList = Nothing
+    mSweep = True
+    Dim res As OrderedDict
+    Set res = RunWalk_(entry, secLabels)
+    mSweep = False
+    res.Add "Missed", False
+    Set SweepWalk_ = res
+End Function
+
+' pass-2 walk: consume the recorded arm sequence at each branch
+Private Function ReplayWalk_(ByVal armSeq As Collection, ByVal entry As OrderedDict, _
+                             ByVal secLabels As OrderedDict) As OrderedDict
+    Set mNeed = New OrderedDict
+    mPrefElse = False
+    mMissed = False
+    mCurTok = ""
+    mSweep = False
+    Set mReplayList = armSeq
+    mReplayIdx = 1
+    Set ReplayWalk_ = RunWalk_(entry, secLabels)
+    Set mReplayList = Nothing
+End Function
+
+' shared walk core: one trace through the inline expansion from the entry
+Private Function RunWalk_(ByVal entry As OrderedDict, ByVal secLabels As OrderedDict) As OrderedDict
     Dim t0 As OrderedDict
     Set t0 = NewTrace_()
     AddEnterEvent_ t0, CStr(entry.Item("name")), secLabels, CLng(entry.Item("line"))
@@ -296,20 +348,11 @@ Private Function TryWalk_(ByVal token As String, ByVal prefElse As Boolean, _
     stack.Add CStr(entry.Item("name"))
     Dim outs As Collection
     Set outs = ApplyRange_(CLng(entry.Item("line")), CLng(entry.Item("secEnd")), stack, seed, secLabels)
-
-    Dim res As OrderedDict
     If outs.Count > 0 Then
-        Set res = outs(1)
+        Set RunWalk_ = outs(1)
     Else
-        Set res = t0   ' walk died (no feasible arm) - Term stays "", dropped
+        Set RunWalk_ = t0   ' walk died (no feasible arm) - Term "", dropped
     End If
-    res.Add "NeedTok", token
-    res.Add "PrefElse", prefElse
-    If Len(token) > 0 And Not mMissed Then
-        If Not ArmOnTrace_(res, token) Then mMissed = True
-    End If
-    res.Add "Missed", mMissed
-    Set TryWalk_ = res
 End Function
 
 ' the extra need-chain for a value-driven retry, or Nothing when the arm
@@ -1278,32 +1321,67 @@ Private Function ApplyOne_(ByVal node As OrderedDict, ByVal stack As Collection,
             tkT = CStr(node.Item("id")) & ":then"
             tkE = CStr(node.Item("id")) & ":else"
             armSel = ""
-            If mNeed.Exists(tkT) Then
-                If okT Then
-                    armSel = "T"
-                Else
-                    mMissed = True
-                    If okE Then armSel = "E"
+            ' tier 1: pass-2 replay consumes the recorded arm sequence
+            If Not mReplayList Is Nothing Then
+                If mReplayIdx <= mReplayList.Count Then
+                    Dim rt As String
+                    rt = CStr(mReplayList(mReplayIdx))
+                    If rt = tkT Then
+                        armSel = "T"
+                        mReplayIdx = mReplayIdx + 1
+                    ElseIf rt = tkE Then
+                        armSel = "E"
+                        mReplayIdx = mReplayIdx + 1
+                    End If
                 End If
-            ElseIf mNeed.Exists(tkE) Then
-                If okE Then
-                    armSel = "E"
+            End If
+            If armSel = "" Then
+                If mNeed.Exists(tkT) Then
+                    If okT Then
+                        armSel = "T"
+                    Else
+                        mMissed = True
+                        If okE Then armSel = "E"
+                    End If
+                ElseIf mNeed.Exists(tkE) Then
+                    If okE Then
+                        armSel = "E"
+                    Else
+                        mMissed = True
+                        If okT Then armSel = "T"
+                    End If
+                ElseIf mSweep Then
+                    ' tier 3: grab an uncovered non-abend arm, else follow the
+                    ' subtree holding more uncovered arms, else default
+                    Dim uT As Boolean, uE As Boolean
+                    uT = False
+                    uE = False
+                    If mSweepUncov.Exists(tkT) Then
+                        If Not BlockAbends_(node.Item("thenChildren")) Then uT = True
+                    End If
+                    If mSweepUncov.Exists(tkE) Then
+                        If Not BlockAbends_(node.Item("elseChildren")) Then uE = True
+                    End If
+                    If uT And okT Then
+                        armSel = "T"
+                    ElseIf uE And okE Then
+                        armSel = "E"
+                    Else
+                        Dim wT As Long, wE As Long
+                        wT = 0
+                        wE = 0
+                        If mSweepW.Exists(tkT) Then wT = CLng(mSweepW.Item(tkT))
+                        If mSweepW.Exists(tkE) Then wE = CLng(mSweepW.Item(tkE))
+                        If wT > wE And okT Then
+                            armSel = "T"
+                        ElseIf wE > wT And okE Then
+                            armSel = "E"
+                        Else
+                            armSel = DefaultArm_(node, okT, okE)
+                        End If
+                    End If
                 Else
-                    mMissed = True
-                    If okT Then armSel = "T"
-                End If
-            Else
-                Dim prefT As Boolean
-                prefT = Not mPrefElse
-                If prefT Then
-                    If BlockAbends_(node.Item("thenChildren")) And Not BlockAbends_(node.Item("elseChildren")) Then prefT = False
-                Else
-                    If BlockAbends_(node.Item("elseChildren")) And Not BlockAbends_(node.Item("thenChildren")) Then prefT = True
-                End If
-                If prefT Then
-                    If okT Then armSel = "T" Else If okE Then armSel = "E"
-                Else
-                    If okE Then armSel = "E" Else If okT Then armSel = "T"
+                    armSel = DefaultArm_(node, okT, okE)
                 End If
             End If
             Dim subs As Collection, sb As OrderedDict, seed As Collection
@@ -1331,6 +1409,69 @@ Private Function ApplyOne_(ByVal node As OrderedDict, ByVal stack As Collection,
         End If
     Next tr
     Set ApplyOne_ = out
+End Function
+
+' accept a finished candidate walk: materialize its arms once and mark
+' them covered (drives the sweep rounds and the fallback skip)
+Private Sub AddCand_(ByVal cands As Collection, ByVal covered As OrderedDict, ByVal w As OrderedDict)
+    If CStr(w.Item("Term")) = "" Then Exit Sub
+    Dim al As Collection, v As Variant
+    Set al = ConsToList_(w.Item("Arms"))
+    w.Add "ArmsL", al
+    For Each v In al
+        If Not covered.Exists(CStr(v)) Then covered.Add CStr(v), True
+    Next v
+    cands.Add w
+End Sub
+
+' uncovered set + ancestor weights for one sweep round
+Private Function BuildSweepState_(ByVal arms As Collection, ByVal covered As OrderedDict) As Boolean
+    Set mSweepUncov = New OrderedDict
+    Set mSweepW = New OrderedDict
+    Dim a As OrderedDict, v As Variant, tok As String
+    For Each a In arms
+        tok = CStr(a.Item("Token"))
+        If Not covered.Exists(tok) Then
+            mSweepUncov.Add tok, True
+            If mArmCtx.Exists(tok) Then
+                For Each v In mArmCtx.Item(tok)
+                    If mSweepW.Exists(CStr(v)) Then
+                        mSweepW.Add CStr(v), CLng(mSweepW.Item(CStr(v))) + 1
+                    Else
+                        mSweepW.Add CStr(v), 1
+                    End If
+                Next v
+            End If
+        End If
+    Next a
+    BuildSweepState_ = (mSweepUncov.Count > 0)
+End Function
+
+Private Function SweepGain_(ByVal w As OrderedDict, ByVal covered As OrderedDict) As Long
+    Dim v As Variant, g As Long
+    g = 0
+    For Each v In ConsToList_(w.Item("Arms"))
+        If Not covered.Exists(CStr(v)) Then g = g + 1
+    Next v
+    SweepGain_ = g
+End Function
+
+' default arm preference: THEN-first (ELSE-first for the prefElse seed),
+' flipped when the preferred arm runs straight into an ABEND terminator
+Private Function DefaultArm_(ByVal node As OrderedDict, ByVal okT As Boolean, ByVal okE As Boolean) As String
+    DefaultArm_ = ""
+    Dim prefT As Boolean
+    prefT = Not mPrefElse
+    If prefT Then
+        If BlockAbends_(node.Item("thenChildren")) And Not BlockAbends_(node.Item("elseChildren")) Then prefT = False
+    Else
+        If BlockAbends_(node.Item("elseChildren")) And Not BlockAbends_(node.Item("thenChildren")) Then prefT = True
+    End If
+    If prefT Then
+        If okT Then DefaultArm_ = "T" Else If okE Then DefaultArm_ = "E"
+    Else
+        If okE Then DefaultArm_ = "E" Else If okT Then DefaultArm_ = "T"
+    End If
 End Function
 
 Private Sub AddCapped_(ByVal out As Collection, ByVal tr As OrderedDict)
@@ -1413,14 +1554,14 @@ Private Sub ApplyAction_(ByVal node As OrderedDict, ByVal stack As Collection, B
                 Exit Sub
             End If
         End If
-        ' remember the first call site (walk identity) for synthesized cases
+        ' remember the first call site (with the arm prefix reaching it) for
+        ' synthesized failure cases - pass 2 replays the prefix to this call
         If Not mSynth.Exists(tgt) Then
             Dim sn As OrderedDict
             Set sn = New OrderedDict
             sn.Add "Line", ln
             sn.Add "Target", tgt
-            sn.Add "NeedTok", mCurTok
-            sn.Add "PrefElse", mPrefElse
+            sn.Add "ArmsAt", tr.Item("Arms")   ' cons head share - O(1)
             mSynth.Add tgt, sn
         End If
         If Len(params) > 0 Then
@@ -1626,17 +1767,66 @@ Private Sub ApplyEvaluate_(ByVal node As OrderedDict, ByVal stack As Collection,
     Dim selIdx As Long, selSkip As Boolean
     selIdx = 0
     selSkip = False
-    If needIdx > 0 Then
-        If WhenAllowed_(needIdx, cs, litAll, matchedIdx) Then
-            selIdx = needIdx
-        Else
-            mMissed = True
+    ' tier 1: pass-2 replay
+    If Not mReplayList Is Nothing Then
+        If mReplayIdx <= mReplayList.Count Then
+            Dim rt As String
+            rt = CStr(mReplayList(mReplayIdx))
+            For wi = 1 To cs.Count
+                If rt = CStr(cs(wi).Item("id")) Then
+                    selIdx = wi
+                    mReplayIdx = mReplayIdx + 1
+                    Exit For
+                End If
+            Next wi
+            If selIdx = 0 Then
+                If rt = CStr(node.Item("id")) & ":skip" Then
+                    selSkip = True
+                    mReplayIdx = mReplayIdx + 1
+                End If
+            End If
         End If
-    ElseIf needSkip Then
-        If hasOther Or (litAll And matchedIdx > 0) Then
-            mMissed = True
-        Else
-            selSkip = True
+    End If
+    If selIdx = 0 And Not selSkip Then
+        If needIdx > 0 Then
+            If WhenAllowed_(needIdx, cs, litAll, matchedIdx) Then
+                selIdx = needIdx
+            Else
+                mMissed = True
+            End If
+        ElseIf needSkip Then
+            If hasOther Or (litAll And matchedIdx > 0) Then
+                mMissed = True
+            Else
+                selSkip = True
+            End If
+        ElseIf mSweep Then
+            ' tier 3: uncovered WHEN first, then the heaviest subtree
+            For wi = 1 To cs.Count
+                If mSweepUncov.Exists(CStr(cs(wi).Item("id"))) Then
+                    If WhenAllowed_(wi, cs, litAll, matchedIdx) Then
+                        selIdx = wi
+                        Exit For
+                    End If
+                End If
+            Next wi
+            If selIdx = 0 And Not hasOther Then
+                If mSweepUncov.Exists(CStr(node.Item("id")) & ":skip") And Not (litAll And matchedIdx > 0) Then selSkip = True
+            End If
+            If selIdx = 0 And Not selSkip Then
+                Dim bw As Long, ww As Long
+                bw = 0
+                For wi = 1 To cs.Count
+                    ww = 0
+                    If mSweepW.Exists(CStr(cs(wi).Item("id"))) Then ww = CLng(mSweepW.Item(CStr(cs(wi).Item("id"))))
+                    If ww > bw Then
+                        If WhenAllowed_(wi, cs, litAll, matchedIdx) Then
+                            bw = ww
+                            selIdx = wi
+                        End If
+                    End If
+                Next wi
+            End If
         End If
     End If
     If selIdx = 0 And Not selSkip Then
@@ -1715,14 +1905,69 @@ Private Sub ApplySearch_(ByVal node As OrderedDict, ByVal stack As Collection, B
     Dim selIdx As Long, selEnd As Boolean
     selIdx = 0
     selEnd = False
-    If needIdx > 0 Then
-        selIdx = needIdx
-    ElseIf needAtEnd Or needSkip Then
-        selEnd = True
-    ElseIf mPrefElse Or cs.Count = 0 Then
-        selEnd = True
-    Else
-        selIdx = 1
+    Dim chosen As Boolean
+    chosen = False
+    ' tier 1: pass-2 replay
+    If Not mReplayList Is Nothing Then
+        If mReplayIdx <= mReplayList.Count Then
+            Dim rt As String
+            rt = CStr(mReplayList(mReplayIdx))
+            For wi = 1 To cs.Count
+                If rt = CStr(cs(wi).Item("id")) Then
+                    selIdx = wi
+                    chosen = True
+                    mReplayIdx = mReplayIdx + 1
+                    Exit For
+                End If
+            Next wi
+            If Not chosen Then
+                If rt = CStr(node.Item("id")) & ":atend" Or rt = CStr(node.Item("id")) & ":skip" Then
+                    selEnd = True
+                    chosen = True
+                    mReplayIdx = mReplayIdx + 1
+                End If
+            End If
+        End If
+    End If
+    If Not chosen Then
+        If needIdx > 0 Then
+            selIdx = needIdx
+        ElseIf needAtEnd Or needSkip Then
+            selEnd = True
+        ElseIf mSweep Then
+            ' tier 3: uncovered WHEN / AT END first, then heaviest subtree
+            For wi = 1 To cs.Count
+                If mSweepUncov.Exists(CStr(cs(wi).Item("id"))) Then
+                    selIdx = wi
+                    Exit For
+                End If
+            Next wi
+            If selIdx = 0 Then
+                If mSweepUncov.Exists(CStr(node.Item("id")) & ":atend") Or _
+                   mSweepUncov.Exists(CStr(node.Item("id")) & ":skip") Then
+                    selEnd = True
+                End If
+            End If
+            If selIdx = 0 And Not selEnd Then
+                Dim bw As Long, ww As Long
+                bw = 0
+                For wi = 1 To cs.Count
+                    ww = 0
+                    If mSweepW.Exists(CStr(cs(wi).Item("id"))) Then ww = CLng(mSweepW.Item(CStr(cs(wi).Item("id"))))
+                    If ww > bw Then
+                        bw = ww
+                        selIdx = wi
+                    End If
+                Next wi
+                If selIdx = 0 Then
+                    If cs.Count > 0 Then selIdx = 1 Else selEnd = True
+                End If
+            End If
+        ElseIf mPrefElse Or cs.Count = 0 Then
+            selEnd = True
+        Else
+            selIdx = 1
+        End If
     End If
 
     Dim seed As Collection, subs As Collection, sb As OrderedDict
@@ -1804,12 +2049,8 @@ Private Function SelectCases_(ByVal normals As Collection, ByVal abends As Colle
     Dim cases As Collection
     Set cases = New Collection
 
-    ' materialize each normal trace's arms once (the greedy loop below
-    ' iterates them repeatedly; cons heads are walk-once structures)
+    ' every candidate already carries its materialized ArmsL (AddCand_)
     Dim coverable As OrderedDict, tr As OrderedDict, v As Variant
-    For Each tr In normals
-        tr.Add "ArmsL", ConsToList_(tr.Item("Arms"))
-    Next tr
 
     ' C1 greedy over normal traces
     Set coverable = New OrderedDict
@@ -1883,8 +2124,7 @@ Private Function SelectCases_(ByVal normals As Collection, ByVal abends As Colle
         Dim ss As OrderedDict
         Set ss = New OrderedDict
         ss.Add "Kind", "synth"
-        ss.Add "NeedTok", CStr(sn.Item("NeedTok"))
-        ss.Add "PrefElse", CBool(sn.Item("PrefElse"))
+        ss.Add "NeedList", ConsToList_(sn.Item("ArmsAt"))
         ss.Add "SynthTarget", CStr(sn.Item("Target"))
         ss.Add "TriggerLine", CLng(sn.Item("Line"))
         synths.Add ss
@@ -1900,8 +2140,7 @@ Private Function SelectCases_(ByVal normals As Collection, ByVal abends As Colle
         Dim ab As OrderedDict
         Set ab = New OrderedDict
         ab.Add "Kind", "abend"
-        ab.Add "NeedTok", CStr(tr.Item("NeedTok"))
-        ab.Add "PrefElse", CBool(tr.Item("PrefElse"))
+        ab.Add "NeedList", tr.Item("ArmsL")
         ab.Add "SynthTarget", ""
         ab.Add "TriggerLine", CLng(tr.Item("TriggerLine"))
         abnormal.Add ab
@@ -1923,8 +2162,7 @@ Private Function SelectCases_(ByVal normals As Collection, ByVal abends As Colle
         sp.Add "Kind", "normal"
         sp.Add "Id", "TC" & serial
         sp.Add "KindSerial", normSerial
-        sp.Add "NeedTok", CStr(tr.Item("NeedTok"))
-        sp.Add "PrefElse", CBool(tr.Item("PrefElse"))
+        sp.Add "NeedList", tr.Item("ArmsL")
         sp.Add "SynthTarget", ""
         cases.Add sp
     Next tr

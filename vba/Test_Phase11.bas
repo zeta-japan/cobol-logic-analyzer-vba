@@ -23,6 +23,7 @@ Public Sub Test_Flow_LoopAndFlag()
     s = ""
     s = s & "       WORKING-STORAGE SECTION." & vbLf
     s = s & "       01  W-IN    PIC X(01)." & vbLf
+    s = s & "       01  W-X     PIC X(01)." & vbLf
     s = s & "       01  F-MAS1  PIC X(01)." & vbLf
     s = s & "       01  T-VAL   PIC 9(01)." & vbLf
     s = s & "       01  W-OUT   PIC X(02)." & vbLf
@@ -33,11 +34,16 @@ Public Sub Test_Flow_LoopAndFlag()
     s = s & "           PERFORM SETUP-SEC." & vbLf
     s = s & "           PERFORM LOOP-SEC VARYING I-IDX FROM 1 BY 1" & vbLf
     s = s & "               UNTIL I-IDX > 20." & vbLf
-    s = s & "           IF F-MAS1 = 'B'" & vbLf
+    s = s & "           IF W-X = '9'" & vbLf
     s = s & "           THEN" & vbLf
-    s = s & "               MOVE 'BB' TO W-OUT" & vbLf
+    s = s & "               IF F-MAS1 = 'B'" & vbLf
+    s = s & "               THEN" & vbLf
+    s = s & "                   MOVE 'BB' TO W-OUT" & vbLf
+    s = s & "               ELSE" & vbLf
+    s = s & "                   MOVE 'KK' TO W-OUT" & vbLf
+    s = s & "               END-IF" & vbLf
     s = s & "           ELSE" & vbLf
-    s = s & "               MOVE 'KK' TO W-OUT" & vbLf
+    s = s & "               MOVE 'ZZ' TO W-OUT" & vbLf
     s = s & "           END-IF." & vbLf
     s = s & "           GOBACK." & vbLf
     s = s & "       SETUP-SEC SECTION." & vbLf
@@ -63,7 +69,7 @@ Public Sub Test_Flow_LoopAndFlag()
 
     Dim flow As OrderedDict
     Set flow = CobolFlow.Analyze_Flow(s, New Collection)
-    TestRunner.Assert_Equal CLng(6), CLng(flow.Item("arms").Count), "loop+flag: 6 arms"
+    TestRunner.Assert_Equal CLng(8), CLng(flow.Item("arms").Count), "loop+flag: 8 arms"
 
     Dim a As OrderedDict, c As OrderedDict, v As Variant, covered As Boolean, uncov As Long
     For Each a In flow.Item("arms")
@@ -77,11 +83,12 @@ Public Sub Test_Flow_LoopAndFlag()
     Next a
     TestRunner.Assert_Equal CLng(0), uncov, _
         "loop bodies inlined + flag idiom steered: every arm covered"
-    TestRunner.Assert_Equal CLng(2), CLng(flow.Item("cases").Count), "loop+flag: 2 cases"
-    ' steering-sensitive pin: the final-IF else walk only survives via the
-    ' value-driven retry (8 = 2 seeds + 6 arm walks, none dropped)
-    TestRunner.Assert_Equal CLng(8), CLng(flow.Item("normalPaths")), _
-        "value steering keeps all 8 candidate walks alive"
+    ' the nested flag arm is reachable by NEITHER seed (the ELSE-pref seed
+    ' turns away at W-X) and the sweep cannot fake the flag value, so
+    ' uncovered=0 above REQUIRES the value-steering fallback walk.
+    TestRunner.Assert_Equal CLng(3), CLng(flow.Item("cases").Count), "loop+flag: 3 cases"
+    TestRunner.Assert_Equal CLng(3), CLng(flow.Item("normalPaths")), _
+        "2 seeds + 1 steered fallback walk"
 End Sub
 
 ' Regression: real sources are full of COPY ... PREFIXING lines, whose data
@@ -131,8 +138,8 @@ Public Sub Test_Flow_ICASE3()
     Set flow = CobolFlow.Analyze_Flow(src, terms)
 
     TestRunner.Assert_Equal CLng(14), CLng(flow.Item("arms").Count), "ICASE3 arms = 14"
-    ' directed construction: candidates = 2 seeds + per-arm walks (ver4 oracle)
-    TestRunner.Assert_Equal CLng(12), CLng(flow.Item("normalPaths")), "normal candidate walks = 12"
+    ' sweep construction: 2 seeds + 1 sweep walk cover all normal arms
+    TestRunner.Assert_Equal CLng(3), CLng(flow.Item("normalPaths")), "normal candidate walks = 3"
     TestRunner.Assert_True Not CBool(flow.Item("truncated")), "not truncated"
 
     Dim cases As Collection
