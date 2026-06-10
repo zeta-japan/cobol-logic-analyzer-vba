@@ -91,7 +91,7 @@ Public Sub SetupControlSheet()
         .Font.Size = 11
         .Font.Color = cText
     End With
-    ws.Range("B7").value = "1.  下の［解析］ボタンを押して、解析したい COBOL ソース (.cbl) を選択" & Chr(10) & _
+    ws.Range("B7").value = "1.  下の［解析］ボタンを押して、解析したい COBOL ソース (.cbl / .txt) を選択" & Chr(10) & _
                            "2.  解析結果が 複数のシートに自動生成されます (再実行で自動上書き)"
     ws.Rows("7:8").RowHeight = 20
 
@@ -129,11 +129,11 @@ Public Sub SetupControlSheet()
         .IndentLevel = 1
         .VerticalAlignment = xlCenter
     End With
-    ws.Range("B14").value = "①  COBOLソース       元コード + 通し行番号"
-    ws.Range("B15").value = "②  ロジック階層(2種)   ソース順 / 実行順展開(テストケース標記付き)"
-    ws.Range("B16").value = "③  テストケース候補   実行流から正常系(C1最少)+異常系シナリオを生成"
-    ws.Range("B17").value = "④  分岐カバレッジ表   検証Point×ケースのマトリクス(漏れは赤表示)"
-    ws.Range("B18").value = "⑤  入出力-想定結果 / Driver雛形 / 呼出関係 ほか"
+    ws.Range("B14").value = "①  COBOLソース ／ ロジック階層（ソース順・実行順展開 ※ケース標記ボタン付き）"
+    ws.Range("B15").value = "②  テストケース候補（正常系=C1最少シナリオ + 異常系シナリオ、ステップフロー形式）"
+    ws.Range("B16").value = "③  分岐カバレッジ表（検証Point × ケースの○マトリクス、未カバー行は赤）"
+    ws.Range("B17").value = "④  入出力-想定結果（ケース毎の入力設定・出力想定値・実測記入欄）"
+    ws.Range("B18").value = "⑤  Driver雛形（正常系を順次実行） ／ 呼出関係・呼出関係図・分岐カバレッジ"
     ws.Rows("14:18").RowHeight = 19
 
     ' --- footer ----------------------------------------------------------
@@ -152,7 +152,7 @@ Public Sub SetupControlSheet()
     ' --- ver3.0: terminator section registration -------------------------
     ws.Range("B22").value = "■ 終了扱いセクション（ABEND処理段など・任意）"
     StyleHeading_ ws.Range("B22"), cAccent
-    ws.Range("B23").value = "下のセルにセクション名を入力すると、解析時に「そこへの PERFORM = 異常終了」として扱います（例: S991-ABEND-PROC）"
+    ws.Range("B23").value = "名前に ABEND を含む SECTION は自動で異常終了扱いになります。他の命名の終了段はここに入力してください（例: ERR-EXIT-SEC）"
     With ws.Range("B23").Font
         .Name = "Meiryo UI"
         .Size = 9
@@ -198,8 +198,23 @@ Public Sub AnalyzeAndBuild(ByVal cblPath As String)
     Dim src As String
     src = CobolEncoding.ReadCobolSource(cblPath, "auto")
 
-    Dim result As OrderedDict
+    ' performance shell: manual recalc + no events while the sheets build;
+    ' restored by PerfRestore_ (HYPERLINK formulas resolve on that recalc).
+    Dim prevCalc As Long
+    prevCalc = Application.Calculation
+    Application.Calculation = xlCalculationManual
+    Application.EnableEvents = False
+    Application.StatusBar = "解析中 (1/4): エンジン解析・パス列挙..."
+
+    Dim result As OrderedDict, engineErr As String
+    On Error Resume Next
     Set result = CobolParser.Analyze_Full(src, "", "utf-8")
+    If Err.Number <> 0 Then engineErr = "#" & Err.Number & " " & Err.Description
+    On Error GoTo 0
+    If result Is Nothing Then
+        PerfRestore_ prevCalc
+        Err.Raise 5, "Main.AnalyzeAndBuild", "エンジン解析に失敗しました " & engineErr
+    End If
 
     Dim json As String
     json = JsonWriter.WriteJson(result)
@@ -225,9 +240,11 @@ Public Sub AnalyzeAndBuild(ByVal cblPath As String)
 
     ' Suppress this call's own "done" dialog; one notice is shown at the very end
     ' so it does not interrupt before the ver2.0 sheets are built.
+    Application.StatusBar = "解析中 (2/4): 基本シート描画..."
     CobolLogicViewer.BuildCobolReport jsonPath, False
 
     ' ver3.0: execution-flow case generation -> tree marking + case sheets
+    Application.StatusBar = "解析中 (3/4): テストケース生成..."
     Dim flowR As OrderedDict, flowErr As String
     flowErr = ""
     On Error Resume Next
@@ -247,6 +264,7 @@ Public Sub AnalyzeAndBuild(ByVal cblPath As String)
         FlowFailBanner_ flowErr
     End If
 
+    Application.StatusBar = "解析中 (4/4): 付帯シート生成..."
     ' ver2.0 feature (1): call/usage relationship diagram sheet
     On Error Resume Next
     CobolDiagram.BuildCallDiagram cblPath
@@ -270,6 +288,8 @@ Public Sub AnalyzeAndBuild(ByVal cblPath As String)
     Kill jsonPath
     On Error GoTo 0
 
+    PerfRestore_ prevCalc
+
     ' Single completion notice, after every sheet (incl. ver2.0) is built.
     On Error Resume Next
     ThisWorkbook.Sheets("ロジック階層(実行順展開)").Activate
@@ -284,6 +304,16 @@ End Sub
 ' ver3.0: terminator sections registered on the control sheet (B24:B29).
 ' A path reaching PERFORM <one of these> is treated as an abnormal end
 ' (ABEND handler etc.). Empty/missing sheet = no registered terminators.
+' Restore the performance shell (one recalc resolves HYPERLINK formulas).
+Private Sub PerfRestore_(ByVal prevCalc As Long)
+    On Error Resume Next
+    Application.StatusBar = False
+    Application.Calculation = prevCalc
+    Application.EnableEvents = True
+    Application.ScreenUpdating = True
+    On Error GoTo 0
+End Sub
+
 ' ver3.0: when case generation fails, show a clear banner on the case sheets
 ' (instead of silently leaving the previous content) with the engine error.
 Private Sub FlowFailBanner_(ByVal msg As String)

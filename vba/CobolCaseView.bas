@@ -200,8 +200,9 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
     For Each a In flow.Item("arms")
         ws.Cells(row, 1).Value = CStr(a.Item("Disp"))
         On Error Resume Next
-        ws.Hyperlinks.Add Anchor:=ws.Cells(row, 2), Address:="", _
-            SubAddress:="'COBOLソース'!A" & (CLng(a.Item("Line")) + 3), TextToDisplay:=CStr(a.Item("Line"))
+        ' HYPERLINK formula instead of Hyperlinks.Add: same click-to-jump,
+        ' but a plain value write (much faster with many rows)
+        ws.Cells(row, 2).Formula = "=HYPERLINK(""#'COBOLソース'!A" & (CLng(a.Item("Line")) + 3) & """," & CLng(a.Item("Line")) & ")"
         If Err.Number <> 0 Then
             ws.Cells(row, 2).Value = CLng(a.Item("Line"))
             Err.Clear

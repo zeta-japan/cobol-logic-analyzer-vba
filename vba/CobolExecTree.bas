@@ -25,6 +25,8 @@ Private Const COL_CTX As Long = 7
 ' Sentinel context for rows in entry-unreached sections: a token no enumerated
 ' path's branchIds contains, so coverage never paints them as executed.
 Private Const UNREACHED_CTX As String = "__unreached__"
+Private Const MAX_TREE_ROWS As Long = 8000   ' render guard for heavily re-PERFORMed programs
+Private mOverflow As Boolean
 
 Private mWs As Worksheet
 Private mRow As Long
@@ -66,6 +68,7 @@ Public Sub RenderExecHierarchy(ByVal ws As Worksheet, ByVal root As Object)
     BuildOwners_ root
     BuildCut_ root
     Set mVisited = New OrderedDict
+    mOverflow = False
 
     If mNodes.Count > 0 And mOwners.Count > 0 Then
         Dim firstStmt As Long, maxStmt As Long
@@ -91,6 +94,11 @@ Public Sub RenderExecHierarchy(ByVal ws As Worksheet, ByVal root As Object)
 
     Dim treeEnd As Long
     treeEnd = mRow - 1
+    If mOverflow Then
+        mWs.Cells(mRow, 1).Value = "※ 展開行数が上限(" & MAX_TREE_ROWS & "行)を超えたため以降を省略しました（PERFORM 多用プログラム）"
+        mWs.Cells(mRow, 1).Font.Color = RGB(192, 0, 0)
+        mRow = mRow + 1
+    End If
     If treeEnd >= treeStart Then
         ws.Range(ws.Cells(treeStart, 1), ws.Cells(treeEnd, 1)).Font.Name = "MS Gothic"
     End If
@@ -490,11 +498,16 @@ End Function
 
 Private Sub EmitRow_(ByVal text As String, ByVal lineNo As Long, ByVal kind As String, _
                      ByVal branchColor As Boolean, ByVal context As String)
+    If mRow > MAX_TREE_ROWS Then
+        mOverflow = True
+        Exit Sub
+    End If
     mWs.Cells(mRow, 1).Value = text
     If lineNo > 0 Then
         On Error Resume Next
-        mWs.Hyperlinks.Add Anchor:=mWs.Cells(mRow, 2), Address:="", _
-            SubAddress:="'COBOLソース'!A" & (lineNo + 3), TextToDisplay:=CStr(lineNo)
+        ' HYPERLINK formula instead of Hyperlinks.Add: same click-to-jump,
+        ' but a plain value write (~100x faster on 1000+ row trees).
+        mWs.Cells(mRow, 2).Formula = "=HYPERLINK(""#'COBOLソース'!A" & (lineNo + 3) & """," & lineNo & ")"
         If Err.Number <> 0 Then
             mWs.Cells(mRow, 2).Value = lineNo
             Err.Clear

@@ -16,6 +16,7 @@ Public Const MAX_PATH_STATES As Long = 200
 Private mUnclosedFrames As Long
 Private mPathTruncated As Boolean
 Private mExpandCalls As Long
+Private mExpandOps As Long   ' heartbeat counter (DoEvents) for big programs
 
 Public Property Get UnclosedFrames() As Long
     UnclosedFrames = mUnclosedFrames
@@ -941,8 +942,27 @@ End Function
 ' Path enumeration + test cases (Phase 4)
 '==============================================================================
 
+' Public compatibility wrapper: signature and result shape are unchanged
+' (Collection seeds in, PathStates carrying ordered Collections out), but
+' the enumeration itself runs on immutable cons lists (ConsList): extending
+' a path is O(1) instead of a full Collection copy. The old copy-per-action
+' behaviour made the expansion quadratic in program length and froze Excel
+' on 1000+ line programs. Only the surviving states are materialized.
 Public Function Expand_NodeSequence(ByVal nodes As Collection, ByVal conditions As Collection, _
         ByVal actions As Collection, ByVal lines As Collection, ByVal branchIds As Collection) As Collection
+    mExpandOps = 0
+    Dim states As Collection
+    Set states = ExpandCons_(nodes, SeedCons_(conditions), SeedCons_(actions), _
+                             SeedCons_(lines), SeedCons_(branchIds))
+    Dim s As PathState
+    For Each s In states
+        MaterializeState_ s
+    Next s
+    Set Expand_NodeSequence = states
+End Function
+
+Private Function ExpandCons_(ByVal nodes As Collection, ByVal conditions As ConsList, _
+        ByVal actions As ConsList, ByVal lines As ConsList, ByVal branchIds As ConsList) As Collection
     mExpandCalls = mExpandCalls + 1
     Dim states As Collection
     Set states = New Collection
@@ -957,9 +977,11 @@ Public Function Expand_NodeSequence(ByVal nodes As Collection, ByVal conditions 
         If ntype = "action" Then
             Set ns = New Collection
             For Each s In states
+                mExpandOps = mExpandOps + 1
+                If (mExpandOps And 4095) = 0 Then DoEvents
                 ns.Add NewState_(s.Conditions, _
-                                 ExtendObj_(s.Actions, node), _
-                                 ExtendVal_(s.Lines, node.Item("startLine")), _
+                                 Cons_(s.Actions, node), _
+                                 Cons_(s.Lines, node.Item("startLine")), _
                                  s.BranchIds)
             Next s
             Set states = ns
@@ -967,18 +989,18 @@ Public Function Expand_NodeSequence(ByVal nodes As Collection, ByVal conditions 
             Set ns = New Collection
             For Each s In states
                 Dim thenStates As Collection, elseStates As Collection
-                Set thenStates = Expand_NodeSequence(node.Item("thenChildren"), _
-                    ExtendVal_(s.Conditions, node.Item("condition")), _
+                Set thenStates = ExpandCons_(node.Item("thenChildren"), _
+                    Cons_(s.Conditions, node.Item("condition")), _
                     s.Actions, _
-                    ExtendVal_(s.Lines, node.Item("startLine")), _
-                    ExtendVal_(s.BranchIds, node.Item("id") & ":then"))
+                    Cons_(s.Lines, node.Item("startLine")), _
+                    Cons_(s.BranchIds, node.Item("id") & ":then"))
                 For Each v In thenStates: ns.Add v: Next v
                 If node.Item("elseChildren").Count > 0 Then
-                    Set elseStates = Expand_NodeSequence(node.Item("elseChildren"), _
-                        ExtendVal_(s.Conditions, Convert_InvertCondition(CStr(node.Item("condition")))), _
+                    Set elseStates = ExpandCons_(node.Item("elseChildren"), _
+                        Cons_(s.Conditions, Convert_InvertCondition(CStr(node.Item("condition")))), _
                         s.Actions, _
-                        ExtendVal_(s.Lines, node.Item("startLine")), _
-                        ExtendVal_(s.BranchIds, node.Item("id") & ":else"))
+                        Cons_(s.Lines, node.Item("startLine")), _
+                        Cons_(s.BranchIds, node.Item("id") & ":else"))
                     For Each v In elseStates: ns.Add v: Next v
                 End If
             Next s
@@ -989,11 +1011,11 @@ Public Function Expand_NodeSequence(ByVal nodes As Collection, ByVal conditions 
             For Each s In states
                 Dim w As OrderedDict, subStates As Collection
                 For Each w In node.Item("cases")
-                    Set subStates = Expand_NodeSequence(w.Item("children"), _
-                        ExtendVal_(s.Conditions, w.Item("condition")), _
+                    Set subStates = ExpandCons_(w.Item("children"), _
+                        Cons_(s.Conditions, w.Item("condition")), _
                         s.Actions, _
-                        ExtendVal_(ExtendVal_(s.Lines, node.Item("startLine")), w.Item("startLine")), _
-                        ExtendVal_(s.BranchIds, w.Item("id")))
+                        Cons_(Cons_(s.Lines, node.Item("startLine")), w.Item("startLine")), _
+                        Cons_(s.BranchIds, w.Item("id")))
                     For Each v In subStates: ns.Add v: Next v
                 Next w
             Next s
@@ -1004,20 +1026,20 @@ Public Function Expand_NodeSequence(ByVal nodes As Collection, ByVal conditions 
             For Each s In states
                 Dim w2 As OrderedDict, subStates2 As Collection
                 For Each w2 In node.Item("cases")
-                    Set subStates2 = Expand_NodeSequence(w2.Item("children"), _
-                        ExtendVal_(s.Conditions, w2.Item("condition")), _
+                    Set subStates2 = ExpandCons_(w2.Item("children"), _
+                        Cons_(s.Conditions, w2.Item("condition")), _
                         s.Actions, _
-                        ExtendVal_(ExtendVal_(s.Lines, node.Item("startLine")), w2.Item("startLine")), _
-                        ExtendVal_(s.BranchIds, w2.Item("id")))
+                        Cons_(Cons_(s.Lines, node.Item("startLine")), w2.Item("startLine")), _
+                        Cons_(s.BranchIds, w2.Item("id")))
                     For Each v In subStates2: ns.Add v: Next v
                 Next w2
                 If node.Item("atEndChildren").Count > 0 Then
                     Dim atEndStates As Collection
-                    Set atEndStates = Expand_NodeSequence(node.Item("atEndChildren"), _
-                        ExtendVal_(s.Conditions, "AT END (" & node.Item("tableExpr") & ")"), _
+                    Set atEndStates = ExpandCons_(node.Item("atEndChildren"), _
+                        Cons_(s.Conditions, "AT END (" & node.Item("tableExpr") & ")"), _
                         s.Actions, _
-                        ExtendVal_(s.Lines, node.Item("startLine")), _
-                        ExtendVal_(s.BranchIds, node.Item("id") & ":atend"))
+                        Cons_(s.Lines, node.Item("startLine")), _
+                        Cons_(s.BranchIds, node.Item("id") & ":atend"))
                     For Each v In atEndStates: ns.Add v: Next v
                 End If
             Next s
@@ -1026,11 +1048,13 @@ Public Function Expand_NodeSequence(ByVal nodes As Collection, ByVal conditions 
         End If
     Next node
 
-    Set Expand_NodeSequence = states
+    Set ExpandCons_ = states
 End Function
 
-Private Function NewState_(ByVal conds As Collection, ByVal acts As Collection, _
-                           ByVal lns As Collection, ByVal bids As Collection) As PathState
+' During expansion the PathState fields hold ConsList heads (or Nothing);
+' NewState_ just shares the immutable heads.
+Private Function NewState_(ByVal conds As Object, ByVal acts As Object, _
+                           ByVal lns As Object, ByVal bids As Object) As PathState
     Dim s As PathState
     Set s = New PathState
     Set s.Conditions = conds
@@ -1040,25 +1064,63 @@ Private Function NewState_(ByVal conds As Collection, ByVal acts As Collection, 
     Set NewState_ = s
 End Function
 
-' Returns a new Collection that is c + [value]. Original collection unchanged.
-Private Function ExtendVal_(ByVal c As Collection, ByVal value As Variant) As Collection
-    Dim out As Collection, v As Variant
-    Set out = New Collection
-    For Each v In c
-        If IsObject(v) Then out.Add v Else out.Add v
-    Next v
-    If IsObject(value) Then out.Add value Else out.Add value
-    Set ExtendVal_ = out
+' O(1) list append: new head referencing the previous one.
+Private Function Cons_(ByVal head As ConsList, ByVal item As Variant) As ConsList
+    Dim n As ConsList
+    Set n = New ConsList
+    If IsObject(item) Then
+        Set n.V = item
+    Else
+        n.V = item
+    End If
+    Set n.Prev = head
+    If head Is Nothing Then n.N = 1 Else n.N = head.N + 1
+    Set Cons_ = n
 End Function
 
-Private Function ExtendObj_(ByVal c As Collection, ByVal obj As Object) As Collection
-    Dim out As Collection, v As Variant
-    Set out = New Collection
+' Convert a (possibly empty) seed Collection into a cons list head.
+Private Function SeedCons_(ByVal c As Collection) As ConsList
+    Dim h As ConsList, v As Variant
+    Set h = Nothing
+    If c Is Nothing Then Exit Function
     For Each v In c
-        If IsObject(v) Then out.Add v Else out.Add v
+        Set h = Cons_(h, v)
     Next v
-    out.Add obj
-    Set ExtendObj_ = out
+    Set SeedCons_ = h
+End Function
+
+' Materialize a finished state's cons heads back into ordered Collections
+' (the public PathState contract consumed by the test-case builder/tests).
+Private Sub MaterializeState_(ByVal s As PathState)
+    Dim h As ConsList
+    Set h = s.Conditions
+    Set s.Conditions = ConsToColl_(h)
+    Set h = s.Actions
+    Set s.Actions = ConsToColl_(h)
+    Set h = s.Lines
+    Set s.Lines = ConsToColl_(h)
+    Set h = s.BranchIds
+    Set s.BranchIds = ConsToColl_(h)
+End Sub
+
+Private Function ConsToColl_(ByVal head As ConsList) As Collection
+    Dim c As Collection
+    Set c = New Collection
+    Set ConsToColl_ = c
+    If head Is Nothing Then Exit Function
+    Dim n As Long, i As Long
+    n = head.N
+    Dim arr() As Variant
+    ReDim arr(1 To n)
+    Dim cur As ConsList
+    Set cur = head
+    For i = n To 1 Step -1
+        If IsObject(cur.V) Then Set arr(i) = cur.V Else arr(i) = cur.V
+        Set cur = cur.Prev
+    Next i
+    For i = 1 To n
+        c.Add arr(i)
+    Next i
 End Function
 
 Public Function New_ScenarioName(ByVal conditions As Collection, ByVal idx As Long) As String

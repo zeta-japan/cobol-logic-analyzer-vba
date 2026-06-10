@@ -8,14 +8,14 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' PathState - lightweight accumulator for one (partial) execution path during
-' Expand_NodeSequence. Uses plain Collection fields with direct access instead
-' of OrderedDict, because the enumeration creates thousands of these and
-' OrderedDict's per-instance CreateObject("Scripting.Dictionary") plus the COM
-' round-trips on every .Item access dominate the runtime.
+' Expand_NodeSequence. The fields are typed As Object because they carry
+' ConsList heads (immutable shared lists, O(1) extension) DURING enumeration
+' and are swapped for ordered Collections when the state is materialized at
+' the end - consumers (test-case builder, tests) always see Collections.
 
 Option Explicit
 
-Public Conditions As Collection
-Public Actions As Collection
-Public Lines As Collection
-Public BranchIds As Collection
+Public Conditions As Object
+Public Actions As Object
+Public Lines As Object
+Public BranchIds As Object

@@ -263,9 +263,7 @@ Private Sub RenderNode(ws As Worksheet, node As Object, ByVal prefix As String, 
     Dim sl As Long
     sl = CLng(node("startLine"))
     On Error Resume Next
-    ws.Hyperlinks.Add Anchor:=ws.Cells(row, 2), Address:="", _
-        SubAddress:="'COBOLソース'!A" & (sl + 3), _
-        TextToDisplay:=CStr(sl)
+    ws.Cells(row, 2).Formula = "=HYPERLINK(""#'COBOLソース'!A" & (sl + 3) & """," & sl & ")"
     If Err.Number <> 0 Then
         ws.Cells(row, 2).Value = sl
         Err.Clear

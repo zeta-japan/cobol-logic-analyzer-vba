@@ -25,6 +25,7 @@ Attribute VB_Name = "CobolFlow"
 Option Explicit
 
 Private Const MAX_TRACES As Long = 200
+Private mOps As Long   ' heartbeat counter: keep Excel responsive on big programs
 
 Private mNodes As Collection      ' AST root nodes
 Private mOwners As Collection     ' {name,line,kind,ownerEnd,secEnd} sorted
@@ -87,6 +88,7 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
     BuildCondItems_ mNodes
     Set mSynth = New OrderedDict
     mTruncated = False
+    mOps = 0
 
     ' stage labels: comment with full-width parens just above a section header
     Dim secLabels As OrderedDict
@@ -450,12 +452,17 @@ End Function
 '======================================================================
 ' Trace plumbing
 '======================================================================
+' Traces hold their Arms / Events / Calls as immutable ConsList heads
+' (Nothing = empty). Appending and cloning are O(1); the lists are
+' materialized into ordered Collections only for the finally-selected
+' cases (BuildCase_ / SelectCases_). This removed the per-fork
+' full-Collection copies that froze Excel on 1000+ line programs.
 Private Function NewTrace_() As OrderedDict
     Dim t As OrderedDict
     Set t = New OrderedDict
-    t.Add "Arms", New Collection
-    t.Add "Events", New Collection
-    t.Add "Calls", New Collection
+    t.Add "Arms", Nothing
+    t.Add "Events", Nothing
+    t.Add "Calls", Nothing
     t.Add "Env", New OrderedDict
     t.Add "Term", ""
     t.Add "TriggerLine", 0
@@ -465,17 +472,10 @@ End Function
 Private Function CloneTrace_(ByVal t As OrderedDict) As OrderedDict
     Dim c As OrderedDict
     Set c = New OrderedDict
-    Dim col As Collection, v As Variant
-    Set col = New Collection
-    For Each v In t.Item("Arms"): col.Add v: Next v
-    c.Add "Arms", col
-    Set col = New Collection
-    For Each v In t.Item("Events"): col.Add v: Next v
-    c.Add "Events", col
-    Set col = New Collection
-    For Each v In t.Item("Calls"): col.Add v: Next v
-    c.Add "Calls", col
-    Dim env As OrderedDict, src As OrderedDict, ks As Collection
+    c.Add "Arms", t.Item("Arms")     ' cons heads are immutable - share them
+    c.Add "Events", t.Item("Events")
+    c.Add "Calls", t.Item("Calls")
+    Dim env As OrderedDict, src As OrderedDict, ks As Collection, v As Variant
     Set env = New OrderedDict
     Set src = t.Item("Env")
     Set ks = src.Keys
@@ -488,13 +488,51 @@ Private Function CloneTrace_(ByVal t As OrderedDict) As OrderedDict
     Set CloneTrace_ = c
 End Function
 
+' O(1) list append: new head referencing the previous one.
+Private Function Cons_(ByVal head As ConsList, ByVal item As Variant) As ConsList
+    Dim n As ConsList
+    Set n = New ConsList
+    If IsObject(item) Then
+        Set n.V = item
+    Else
+        n.V = item
+    End If
+    Set n.Prev = head
+    If head Is Nothing Then n.N = 1 Else n.N = head.N + 1
+    Set Cons_ = n
+End Function
+
+Private Function ConsCount_(ByVal head As ConsList) As Long
+    If head Is Nothing Then ConsCount_ = 0 Else ConsCount_ = head.N
+End Function
+
+' Materialize a cons list into a Collection in original (append) order.
+Private Function ConsToList_(ByVal head As ConsList) As Collection
+    Dim c As Collection
+    Set c = New Collection
+    Set ConsToList_ = c
+    Dim n As Long
+    n = ConsCount_(head)
+    If n = 0 Then Exit Function
+    Dim arr() As Variant, cur As ConsList, i As Long
+    ReDim arr(1 To n)
+    Set cur = head
+    For i = n To 1 Step -1
+        If IsObject(cur.V) Then Set arr(i) = cur.V Else arr(i) = cur.V
+        Set cur = cur.Prev
+    Next i
+    For i = 1 To n
+        c.Add arr(i)
+    Next i
+End Function
+
 Private Sub AddEvent_(ByVal t As OrderedDict, ByVal kind As String, ByVal text As String, ByVal lineNo As Long)
     Dim e As OrderedDict
     Set e = New OrderedDict
     e.Add "Kind", kind
     e.Add "Text", text
     e.Add "Line", lineNo
-    t.Item("Events").Add e
+    t.Add "Events", Cons_(t.Item("Events"), e)
 End Sub
 
 Private Sub AddEnterEvent_(ByVal t As OrderedDict, ByVal secName As String, ByVal secLabels As OrderedDict, ByVal lineNo As Long)
@@ -508,12 +546,12 @@ Private Sub AddEnterEvent_(ByVal t As OrderedDict, ByVal secName As String, ByVa
         e.Add "Label", ""
     End If
     e.Add "Line", lineNo
-    t.Item("Events").Add e
+    t.Add "Events", Cons_(t.Item("Events"), e)
 End Sub
 
 Private Sub AddArmEvent_(ByVal t As OrderedDict, ByVal token As String, ByVal armName As String, _
                          ByVal cond As String, ByVal lineNo As Long)
-    t.Item("Arms").Add token
+    t.Add "Arms", Cons_(t.Item("Arms"), token)
     Dim e As OrderedDict
     Set e = New OrderedDict
     e.Add "Kind", "arm"
@@ -522,7 +560,7 @@ Private Sub AddArmEvent_(ByVal t As OrderedDict, ByVal token As String, ByVal ar
     e.Add "Cond", cond
     e.Add "Text", armName & " : " & cond
     e.Add "Line", lineNo
-    t.Item("Events").Add e
+    t.Add "Events", Cons_(t.Item("Events"), e)
 End Sub
 
 Private Sub AddAssignEvent_(ByVal t As OrderedDict, ByVal dst As String, ByVal srcTxt As String, _
@@ -536,7 +574,7 @@ Private Sub AddAssignEvent_(ByVal t As OrderedDict, ByVal dst As String, ByVal s
     e.Add "IsKey", mCondItems.Exists(dst)
     e.Add "Text", dst & " <- " & srcTxt
     e.Add "Line", lineNo
-    t.Item("Events").Add e
+    t.Add "Events", Cons_(t.Item("Events"), e)
 End Sub
 
 '======================================================================
@@ -736,6 +774,8 @@ End Function
 
 Private Function ApplyOne_(ByVal node As OrderedDict, ByVal stack As Collection, _
                            ByVal traces As Collection, ByVal secLabels As OrderedDict) As Collection
+    mOps = mOps + 1
+    If (mOps And 2047) = 0 Then DoEvents   ' stay responsive on big programs
     Dim out As Collection
     Set out = New Collection
     Dim tr As OrderedDict, t As String
@@ -833,7 +873,7 @@ Private Sub ApplyAction_(ByVal node As OrderedDict, ByVal stack As Collection, B
         Dim tgt As String, params As String
         tgt = m.Item(0).SubMatches(0)
         params = m.Item(0).SubMatches(2)
-        tr.Item("Calls").Add tgt
+        tr.Add "Calls", Cons_(tr.Item("Calls"), tgt)
         AddEvent_ tr, "call", lbl, ln
         ' remember the first call site for synthesized failure cases
         If Not mSynth.Exists(tgt) Then
@@ -1158,11 +1198,17 @@ Private Function SelectCases_(ByVal normals As Collection, ByVal abends As Colle
     Dim cases As Collection
     Set cases = New Collection
 
-    ' C1 greedy over normal traces
+    ' materialize each normal trace's arms once (the greedy loop below
+    ' iterates them repeatedly; cons heads are walk-once structures)
     Dim coverable As OrderedDict, tr As OrderedDict, v As Variant
+    For Each tr In normals
+        tr.Add "ArmsL", ConsToList_(tr.Item("Arms"))
+    Next tr
+
+    ' C1 greedy over normal traces
     Set coverable = New OrderedDict
     For Each tr In normals
-        For Each v In tr.Item("Arms")
+        For Each v In tr.Item("ArmsL")
             If Not coverable.Exists(CStr(v)) Then coverable.Add CStr(v), True
         Next v
     Next tr
@@ -1182,7 +1228,7 @@ Private Function SelectCases_(ByVal normals As Collection, ByVal abends As Colle
         bestGain = 0
         For Each tr In normals
             gain = 0
-            For Each v In tr.Item("Arms")
+            For Each v In tr.Item("ArmsL")
                 If uncov.Exists(CStr(v)) Then
                     If Not IsEmpty(uncov.Item(CStr(v))) Then gain = gain + 1
                 End If
@@ -1194,7 +1240,7 @@ Private Function SelectCases_(ByVal normals As Collection, ByVal abends As Colle
         Next tr
         If best Is Nothing Then Exit Do
         picked.Add best
-        For Each v In best.Item("Arms")
+        For Each v In best.Item("ArmsL")
             If uncov.Exists(CStr(v)) Then uncov.Add CStr(v), Empty
         Next v
     Loop
@@ -1202,20 +1248,21 @@ Private Function SelectCases_(ByVal normals As Collection, ByVal abends As Colle
     ' one normal case so the scenario list is never silently empty
     If picked.Count = 0 And normals.Count > 0 Then picked.Add normals(1)
 
-    ' code-derived abend cases: one per (final arm, terminator), shortest
+    ' code-derived abend cases: one per (final arm, terminator), shortest.
+    ' the cons head IS the last arm, so this needs no materialization.
     Dim groups As OrderedDict, key As String
     Set groups = New OrderedDict
     For Each tr In abends
-        Dim armsC As Collection
-        Set armsC = tr.Item("Arms")
-        If armsC.Count > 0 Then
-            key = CStr(armsC(armsC.Count)) & "|" & CStr(tr.Item("Term"))
+        Dim ah As ConsList
+        Set ah = tr.Item("Arms")
+        If Not ah Is Nothing Then
+            key = CStr(ah.V) & "|" & CStr(tr.Item("Term"))
         Else
             key = "(none)|" & CStr(tr.Item("Term"))
         End If
         If Not groups.Exists(key) Then
             groups.Add key, tr
-        ElseIf armsC.Count < groups.Item(key).Item("Arms").Count Then
+        ElseIf ConsCount_(ah) < ConsCount_(groups.Item(key).Item("Arms")) Then
             groups.Add key, tr
         End If
     Next tr
@@ -1242,10 +1289,10 @@ Private Function SelectCases_(ByVal normals As Collection, ByVal abends As Colle
     For Each gv In gk
         Set tr = groups.Item(CStr(gv))
         If CLng(tr.Item("TriggerLine")) = 0 Then
-            ' trigger = line of the terminating event
-            Dim evs As Collection
-            Set evs = tr.Item("Events")
-            If evs.Count > 0 Then tr.Add "TriggerLine", CLng(evs(evs.Count).Item("Line"))
+            ' trigger = line of the terminating event (= the cons head)
+            Dim eh As ConsList
+            Set eh = tr.Item("Events")
+            If Not eh Is Nothing Then tr.Add "TriggerLine", CLng(eh.V.Item("Line"))
         End If
         abnormal.Add tr
     Next gv
@@ -1316,12 +1363,18 @@ Private Function BuildCase_(ByVal tr As OrderedDict, ByVal id As String, ByVal k
     c.Add "kindSerial", kindSerial
     c.Add "term", tr.Item("Term")
     c.Add "triggerLine", tr.Item("TriggerLine")
-    c.Add "arms", tr.Item("Arms")
-    c.Add "events", tr.Item("Events")
+    ' materialize the cons lists for this selected case only
+    If tr.Exists("ArmsL") Then
+        c.Add "arms", tr.Item("ArmsL")
+    Else
+        c.Add "arms", ConsToList_(tr.Item("Arms"))
+    End If
+    Dim evs As Collection
+    Set evs = ConsToList_(tr.Item("Events"))
+    c.Add "events", evs
     ' final action = last lined non-term event (the user's definition: the
     ' last statement executed right before the program really ends)
-    Dim evs As Collection, i As Long, fl As Long, e As OrderedDict
-    Set evs = tr.Item("Events")
+    Dim i As Long, fl As Long, e As OrderedDict
     fl = 0
     For i = evs.Count To 1 Step -1
         Set e = evs(i)
