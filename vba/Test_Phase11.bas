@@ -1,9 +1,10 @@
 Attribute VB_Name = "Test_Phase11"
-' Test_Phase11 - ver3.1: directed-path case generation (CobolFlow.Analyze_Flow)
+' Test_Phase11 - ver3.2: sweep + fallback case generation (Analyze_Flow)
 ' validated against the ver4 PS oracle on the ICASE3 fixture: 14 arms,
-' 12 normal candidate walks (2 seeds + per-arm directed walks; 1 walk misses
-' its target, 3 walks end in ABEND), cases = 3 normal + 3 code-abend + 2
-' synthesized call-failures, full arm coverage, no infeasible combination.
+' 3 normal candidate walks (2 seeds + 1 targeted fallback for if-137:else;
+' the sweep round gains nothing on ICASE3 because its weight leads away
+' from the env value if-132:then needs), 3 abend fallbacks, cases =
+' 3 normal + 3 code-abend + 2 synth, full coverage, no infeasible combo.
 
 Option Explicit
 
@@ -13,11 +14,12 @@ Public Sub Run_All()
     TestRunner.Run_One "Test_Flow_LoopAndFlag"
 End Sub
 
-' ver3.1: (a) loop-form PERFORM (VARYING/UNTIL/TIMES) bodies are inlined
-' once, so their branch arms are reachable; (b) the flag idiom (a sibling
-' branch MOVEs a literal a later IF tests) is covered via the value-driven
-' steering retry. Expectations from the ver4 oracle on the same source
-' (BIGCASE2): 6 arms, every arm covered, 2 normal cases.
+' (a) loop-form PERFORM (VARYING/UNTIL/TIMES) bodies are inlined once, so
+' their branch arms are reachable; (b) the flag idiom (a sibling branch
+' MOVEs a literal a later nested IF tests) is covered via the value-driven
+' steering retry - the nested arm is reachable by NEITHER seed and the
+' sweep cannot fake the flag value, so full coverage REQUIRES steering.
+' ver4 oracle expectations: 8 arms, every arm covered, 3 normal cases.
 Public Sub Test_Flow_LoopAndFlag()
     Dim s As String
     s = ""
@@ -138,7 +140,7 @@ Public Sub Test_Flow_ICASE3()
     Set flow = CobolFlow.Analyze_Flow(src, terms)
 
     TestRunner.Assert_Equal CLng(14), CLng(flow.Item("arms").Count), "ICASE3 arms = 14"
-    ' sweep construction: 2 seeds + 1 sweep walk cover all normal arms
+    ' 2 seeds + 1 targeted fallback (the ICASE3 sweep round gains 0)
     TestRunner.Assert_Equal CLng(3), CLng(flow.Item("normalPaths")), "normal candidate walks = 3"
     TestRunner.Assert_True Not CBool(flow.Item("truncated")), "not truncated"
 

@@ -36,13 +36,14 @@ Private mConsReg As Collection
 Private mRangeCache As OrderedDict
 Private mOwnerIdx As OrderedDict
 
-' ---- directed path construction (ver3.1) ----
+' ---- directed path construction (ver3.2) ----
 ' Enumerating all paths is exponential in the branch count; for C1 coverage
-' we instead build ONE path per branch arm: ancestors of the target arm are
-' steered as required (mNeed), every other branch takes a default feasible
-' arm preferring the one that does not run into an ABEND terminator. Two
-' seed walks (THEN-pref / ELSE-pref) cover most arms up front. Work is
-' O(arms x path length) - linear, validated by the ver4 PS oracle.
+' we construct candidates directly: two seed walks (THEN/ELSE preference,
+' ABEND-avoiding), then SWEEP rounds that each maximize uncovered-arm
+' pickup (direct pick at the branch, ancestor weights elsewhere) keeping
+' the case count near the optimal cover, then a targeted fallback walk per
+' still-uncovered arm (abends / value-steered flag arms). Work is linear
+' in arms x path length, validated by the ver4 PS oracle.
 Private mNeed As OrderedDict       ' required arm tokens for the current walk
 Private mPrefElse As Boolean       ' seed preference for unsteered branches
 Private mMissed As Boolean         ' walk could not honor a required arm
@@ -255,9 +256,9 @@ End Function
 ' Directed path construction
 '======================================================================
 ' One walk = one trace: branches on the way to the target arm are steered
-' (mNeed), all others take a default feasible arm. Returns the finished
-' trace tagged with the walk identity (NeedTok/PrefElse) so pass 2 can
-' reproduce it with events recorded.
+' (mNeed), all others take a default feasible arm. Pass 2 reproduces a
+' selected walk by replaying its recorded arm sequence (ReplayWalk_), so
+' the result only needs its Arms/Term - no walk-identity tags.
 Private Function WalkTo_(ByVal token As String, ByVal prefElse As Boolean, _
                          ByVal entry As OrderedDict, ByVal secLabels As OrderedDict) As OrderedDict
     Dim res As OrderedDict
@@ -362,20 +363,29 @@ Private Function SteerChain_(ByVal token As String) As Collection
     If Not mArmSteer.Exists(token) Then Exit Function
     Dim si As OrderedDict
     Set si = mArmSteer.Item(token)
-    Dim key As String
+    Dim key As String, vals() As String, i As Long
     key = ""
+    vals = Split(CStr(si.Item("Val")), "|")
     If CStr(si.Item("Mode")) = "eq" Then
-        If mAssignCtx.Exists(CStr(si.Item("Item")) & "=" & CStr(si.Item("Val"))) Then
-            key = CStr(si.Item("Item")) & "=" & CStr(si.Item("Val"))
-        End If
+        ' establish ANY of the listed values
+        For i = LBound(vals) To UBound(vals)
+            If mAssignCtx.Exists(CStr(si.Item("Item")) & "=" & vals(i)) Then
+                key = CStr(si.Item("Item")) & "=" & vals(i)
+                Exit For
+            End If
+        Next i
     Else
-        ' any literal assignment of a DIFFERENT value to the same item
-        Dim ks As Collection, v As Variant, pre As String
+        ' any literal assignment of a value OUTSIDE the list
+        Dim ks As Collection, v As Variant, pre As String, hitList As Boolean
         pre = CStr(si.Item("Item")) & "="
         Set ks = mAssignCtx.Keys
         For Each v In ks
             If Left$(CStr(v), Len(pre)) = pre Then
-                If CStr(v) <> pre & CStr(si.Item("Val")) Then
+                hitList = False
+                For i = LBound(vals) To UBound(vals)
+                    If CStr(v) = pre & vals(i) Then hitList = True
+                Next i
+                If Not hitList Then
                     key = CStr(v)
                     Exit For
                 End If
@@ -386,17 +396,41 @@ Private Function SteerChain_(ByVal token As String) As Collection
     Set SteerChain_ = mAssignCtx.Item(key)
 End Function
 
-' literal-equality steering info for an IF node's arms
+' literal-equality steering info for an IF node's arms. "Val" carries a
+' pipe-joined value LIST: eq = establish any listed value, ne = establish
+' a value outside the list. OR-lists of equalities on the same item are
+' the exact shape TestFeasible_ prunes, so they need steering too.
 Private Sub SteerInfo_(ByVal cond As String, ByVal nodeId As String)
     Dim c0 As String
     c0 = Trim$(cond)
-    If InStr(c0, " AND ") > 0 Or InStr(c0, " OR ") > 0 Then Exit Sub
+    If InStr(c0, " AND ") > 0 Then Exit Sub
     Static rxEq As Object, rxNe As Object
     If rxEq Is Nothing Then
         Set rxEq = CreateObject("VBScript.RegExp"): rxEq.Pattern = "^([A-Z0-9-]+)\s*=\s*(.+)$": rxEq.IgnoreCase = False
         Set rxNe = CreateObject("VBScript.RegExp"): rxNe.Pattern = "^([A-Z0-9-]+)\s+NOT\s*=\s*(.+)$": rxNe.IgnoreCase = False
     End If
     Dim m As Object, lit As String
+    If InStr(c0, " OR ") > 0 Then
+        Dim parts() As String, i As Long, item As String, vals As String
+        parts = Split(c0, " OR ")
+        item = ""
+        vals = ""
+        For i = LBound(parts) To UBound(parts)
+            Set m = rxEq.Execute(Trim$(parts(i)))
+            If m.Count = 0 Then Exit Sub
+            If Not GetLiteral_(m.Item(0).SubMatches(1), lit) Then Exit Sub
+            If i = LBound(parts) Then
+                item = m.Item(0).SubMatches(0)
+            ElseIf item <> m.Item(0).SubMatches(0) Then
+                Exit Sub
+            End If
+            If Len(vals) > 0 Then vals = vals & "|"
+            vals = vals & NormVal_(lit)
+        Next i
+        AddSteer_ nodeId & ":then", item, vals, "eq"
+        AddSteer_ nodeId & ":else", item, vals, "ne"
+        Exit Sub
+    End If
     Set m = rxNe.Execute(c0)
     If m.Count > 0 Then
         If GetLiteral_(m.Item(0).SubMatches(1), lit) Then
@@ -1801,12 +1835,15 @@ Private Sub ApplyEvaluate_(ByVal node As OrderedDict, ByVal stack As Collection,
                 selSkip = True
             End If
         ElseIf mSweep Then
-            ' tier 3: uncovered WHEN first, then the heaviest subtree
+            ' tier 3: uncovered non-abend WHEN first, then the heaviest
+            ' subtree (abend WHENs stay for the targeted fallback walks)
             For wi = 1 To cs.Count
                 If mSweepUncov.Exists(CStr(cs(wi).Item("id"))) Then
                     If WhenAllowed_(wi, cs, litAll, matchedIdx) Then
-                        selIdx = wi
-                        Exit For
+                        If Not BlockAbends_(cs(wi).Item("children")) Then
+                            selIdx = wi
+                            Exit For
+                        End If
                     End If
                 End If
             Next wi
@@ -1935,11 +1972,14 @@ Private Sub ApplySearch_(ByVal node As OrderedDict, ByVal stack As Collection, B
         ElseIf needAtEnd Or needSkip Then
             selEnd = True
         ElseIf mSweep Then
-            ' tier 3: uncovered WHEN / AT END first, then heaviest subtree
+            ' tier 3: uncovered non-abend WHEN / AT END first, then the
+            ' heaviest subtree (abend arms stay for the fallback walks)
             For wi = 1 To cs.Count
                 If mSweepUncov.Exists(CStr(cs(wi).Item("id"))) Then
-                    selIdx = wi
-                    Exit For
+                    If Not BlockAbends_(cs(wi).Item("children")) Then
+                        selIdx = wi
+                        Exit For
+                    End If
                 End If
             Next wi
             If selIdx = 0 Then
