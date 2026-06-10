@@ -54,10 +54,35 @@ Public Sub RebuildVbaProject()
                   "Test_Phase4.bas", "Test_Phase5.bas", "Test_Phase6.bas", _
                   "Test_Phase7.bas", "Test_Phase8.bas", "Test_Phase9.bas", _
                   "Test_Phase10.bas", "Test_Phase11.bas")
+    ' VBE only recognizes module/class headers with CRLF line endings; a
+    ' file that arrives LF-only (zip download, unusual git config) would be
+    ' imported as a broken standard module. Self-heal: import via a CRLF
+    ' temp copy whenever the file has no CRLF at all.
     n = 0
+    Dim ff As Integer, raw() As Byte, src As String, tmpPath As String
     For i = LBound(files) To UBound(files)
         If Len(Dir(folder & files(i))) > 0 Then
-            proj.VBComponents.Import folder & files(i)
+            ff = FreeFile
+            Open folder & files(i) For Binary Access Read As #ff
+            src = ""
+            If LOF(ff) > 0 Then
+                ReDim raw(1 To LOF(ff))
+                Get #ff, , raw
+                src = StrConv(raw, vbUnicode)
+            End If
+            Close #ff
+            If InStr(src, vbCrLf) = 0 And InStr(src, vbLf) > 0 Then
+                tmpPath = Environ$("TEMP") & "\" & files(i)
+                ff = FreeFile
+                Open tmpPath For Output As #ff
+                Print #ff, Replace(src, vbLf, vbCrLf);
+                Close #ff
+                proj.VBComponents.Import tmpPath
+                Kill tmpPath
+                Debug.Print "EOL-FIXED ON IMPORT: " & files(i)
+            Else
+                proj.VBComponents.Import folder & files(i)
+            End If
             n = n + 1
         Else
             Debug.Print "MISSING: " & folder & files(i)
