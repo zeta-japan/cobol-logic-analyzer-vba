@@ -31,7 +31,7 @@ Private Const C_SECTION As Long = 13168895   ' RGB(255,240,200) SECTION ヘッダ
 ' 公開エントリポイント
 '==========================================================================
 
-Public Sub SetupControlSheet()
+Private Sub LegacySetupControlSheet_()   ' retired: Main.SetupControlSheet is the real one
     Dim ws As Worksheet
     Set ws = EnsureSheet("コントロール")
     ws.Cells.Clear
@@ -79,20 +79,19 @@ Public Sub PickJsonAndBuild()
 End Sub
 
 Public Sub BuildCobolReport(ByVal logicJsonPath As String, Optional ByVal showDone As Boolean = True)
+    On Error GoTo Fail
     Dim root As Object
     Set root = ParseJson(ReadAllText(logicJsonPath))
-
-    On Error GoTo Fail
     Application.ScreenUpdating = False
 
     ' COBOLソース を先に作成 (ロジック階層からハイパーリンクするため)
     RenderSource    EnsureSheet("COBOLソース"),       root
-    CobolExecTree.RenderExecHierarchy EnsureSheet("ロジック階層"),     root
-    RenderTestCases EnsureSheet("テストケース候補"), root
+    RenderHierarchy EnsureSheet("ロジック階層(ソース順)"), root
+    CobolExecTree.RenderExecHierarchy EnsureSheet("ロジック階層(実行順展開)"), root
     RenderCoverage  EnsureSheet("分岐カバレッジ"),   root
     RenderCallGraph EnsureSheet("呼出関係"),         root
 
-    ThisWorkbook.Sheets("ロジック階層").Activate
+    ThisWorkbook.Sheets("ロジック階層(実行順展開)").Activate
     Application.ScreenUpdating = True
 
     If showDone Then MsgBox "解析レポート生成完了" & vbLf & logicJsonPath
@@ -154,7 +153,7 @@ Private Sub RenderHierarchy(ws As Worksheet, root As Object)
     Dim s As Object
     Set s = root("summary")
 
-    ws.Range("A1").Value = "COBOLロジック階層"
+    ws.Range("A1").Value = "COBOLロジック階層（ソース順）"
     ws.Range("A1").Font.Bold = True
     ws.Range("A1").Font.Size = 14
 

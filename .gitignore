@@ -29,3 +29,7 @@ Thumbs.db
 
 # Local snapshot archives (kept for personal record, not for the repo)
 Commit-*/
+
+# Ad-hoc work files dropped into samples for analysis - NEVER commit.
+# Keep them outside the repo if possible.
+samples/input/*.txt

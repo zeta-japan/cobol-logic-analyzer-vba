@@ -124,6 +124,8 @@ Public Function Get_NormalizedCobolLines(ByVal source As String, Optional ByVal 
 
     Dim lines As Collection
     Set lines = New Collection
+    Dim comments As Collection
+    Set comments = New Collection
 
     Dim idx As Long, stripped As String, headStandard As String, txt As String
     Dim entry As OrderedDict
@@ -143,14 +145,25 @@ Public Function Get_NormalizedCobolLines(ByVal source As String, Optional ByVal 
             End If
         End If
         txt = Convert_CollapseSpaces(stripped)
-        If txt <> "" And Not rxComment.Test(txt) Then
-            Set entry = New OrderedDict
-            entry.Add "Number", idx
-            entry.Add "Raw", rl
-            entry.Add "Text", txt
-            lines.Add entry
+        If txt <> "" Then
+            If rxComment.Test(txt) Then
+                ' ver3.0: keep comments (stage labels for the test-case views)
+                Set entry = New OrderedDict
+                entry.Add "Number", idx
+                entry.Add "Text", Trim$(Mid$(txt, 2))
+                comments.Add entry
+            Else
+                Set entry = New OrderedDict
+                entry.Add "Number", idx
+                entry.Add "Raw", rl
+                entry.Add "Text", txt
+                lines.Add entry
+            End If
         End If
     Next i
+
+    ' ver3.0: stitch multi-line statements into one logical line
+    Set lines = Merge_ContinuationLines(lines)
 
     Dim result As OrderedDict
     Set result = New OrderedDict
@@ -158,7 +171,93 @@ Public Function Get_NormalizedCobolLines(ByVal source As String, Optional ByVal 
     result.Add "PrefixDetected", detected
     result.Add "PrefixStyle", style
     result.Add "PrefixRatio", Round(ratio, 3)
+    result.Add "Comments", comments
     Set Get_NormalizedCobolLines = result
+End Function
+
+' ver3.0 - merge multi-line statements into one logical line so the parser,
+' path enumerator and call extractor all see complete statements:
+'   1) a line ending with OR / AND continues on the next line (split conditions)
+'   2) EXEC ... END-EXEC blocks become one statement
+'   3) STRING continues until its INTO clause arrives
+'   4) CALL ... USING continues over operand-only lines up to the period
+' The merged statement keeps the FIRST line's number (hyperlinks/marking rely
+' on it). Lines that trigger no rule pass through unchanged, so programs
+' without continuations parse exactly as before.
+Public Function Merge_ContinuationLines(ByVal lines As Collection) As Collection
+    Dim result As Collection
+    Set result = New Collection
+    Dim i As Long, cur As OrderedDict, txt As String, ntxt As String
+    Dim take As Boolean, entry As OrderedDict
+    i = 1
+    Do While i <= lines.Count
+        Set cur = lines(i)
+        txt = CStr(cur.Item("Text"))
+        Do While i + 1 <= lines.Count
+            ntxt = CStr(lines(i + 1).Item("Text"))
+            take = False
+            If (Left$(txt, 5) = "EXEC " Or txt = "EXEC") And InStr(txt, "END-EXEC") = 0 Then
+                ' guard: an unterminated EXEC must not swallow the whole file
+                If Not Test_BlockBoundary(ntxt) Then take = True
+            ElseIf Right$(txt, 3) = " OR" Or Right$(txt, 4) = " AND" Then
+                take = True
+            ElseIf Left$(ntxt, 3) = "OR " Or Left$(ntxt, 4) = "AND " Then
+                ' leading-operator continuation style ("IF A = 1" / "OR B = 2")
+                take = True
+            ElseIf Left$(txt, 7) = "STRING " And InStr(txt, " INTO ") = 0 Then
+                take = True
+            ElseIf Left$(txt, 5) = "CALL " And InStr(txt & " ", " USING ") > 0 And Right$(txt, 1) <> "." Then
+                If Test_OperandOnly(ntxt) Then take = True
+            End If
+            If Not take Then Exit Do
+            txt = txt & " " & ntxt
+            i = i + 1
+        Loop
+        Set entry = New OrderedDict
+        entry.Add "Number", cur.Item("Number")
+        entry.Add "Raw", cur.Item("Raw")
+        entry.Add "Text", txt
+        result.Add entry
+        i = i + 1
+    Loop
+    Set Merge_ContinuationLines = result
+End Function
+
+' True if the line is a bare operand (identifier only, optional trailing
+' period) and not a control keyword - i.e. a safe CALL-USING continuation.
+Private Function Test_OperandOnly(ByVal t As String) As Boolean
+    Static rx As Object
+    If rx Is Nothing Then
+        Set rx = CreateObject("VBScript.RegExp")
+        rx.Pattern = "^[A-Z0-9][A-Z0-9-]*\.?$"
+        rx.IgnoreCase = False
+    End If
+    Test_OperandOnly = False
+    If Not rx.Test(t) Then Exit Function
+    Dim x As String
+    x = t
+    If Right$(x, 1) = "." Then x = Left$(x, Len(x) - 1)
+    If Left$(x, 4) = "END-" Then Exit Function   ' any scope terminator
+    If Not Test_ParagraphName(x) Then Exit Function
+    Test_OperandOnly = True
+End Function
+
+' True for lines that begin a new section/division - used to stop a runaway
+' merge when an EXEC block is missing its END-EXEC.
+Private Function Test_BlockBoundary(ByVal t As String) As Boolean
+    Test_BlockBoundary = False
+    If InStr(t, " DIVISION") > 0 Then
+        Test_BlockBoundary = True
+        Exit Function
+    End If
+    Dim x As String
+    x = t
+    If Right$(x, 1) = "." Then x = Left$(x, Len(x) - 1)
+    If Right$(x, 8) = " SECTION" Then
+        ' only a real header (NAME SECTION, single token) is a boundary;
+        ' "BEGIN DECLARE SECTION" inside EXEC .. END-EXEC is not.
+        If InStr(Left$(x, Len(x) - 8), " ") = 0 Then Test_BlockBoundary = True
+    End If
 End Function
 
 '==============================================================================
@@ -195,7 +294,9 @@ Public Function Test_ParagraphName(ByVal name As String) As Boolean
     Dim excluded As Variant
     excluded = Array("IDENTIFICATION", "ENVIRONMENT", "DATA", "PROCEDURE", "PROGRAM-ID", _
                      "THEN", "ELSE", "END-IF", "END-EVALUATE", "END-SEARCH", "END-PERFORM", _
-                     "END-READ", "END-CALL", "EXIT", "CONTINUE", "GOBACK")
+                     "END-READ", "END-CALL", "END-STRING", "END-COMPUTE", "END-ACCEPT", _
+                     "END-EXEC", "END-WRITE", "END-REWRITE", "END-DELETE", "END-START", _
+                     "EXIT", "CONTINUE", "GOBACK")
     Dim upName As String, i As Long
     upName = UCase$(name)
     For i = LBound(excluded) To UBound(excluded)
@@ -277,7 +378,9 @@ Public Function Get_CobolAction(ByVal txt As String, ByVal lineNumber As Long) A
     Static rx As Object, rxSpaces As Object
     If rx Is Nothing Then
         Set rx = CreateObject("VBScript.RegExp")
-        rx.Pattern = "^(PERFORM|CALL|GO\s+TO|MOVE|COMPUTE|READ|WRITE|REWRITE|DELETE)\b\s*(.*)$"
+        ' (?!-) keeps hyphenated paragraph names (INITIALIZE-RTN etc.) from
+        ' matching as verbs - a verb is always followed by a space or line end.
+        rx.Pattern = "^(PERFORM|CALL|GO\s+TO|MOVE|COMPUTE|READ|WRITE|REWRITE|DELETE|STRING|INITIALIZE|ACCEPT|EXEC|GOBACK|STOP\s+RUN|EXIT\s+PROGRAM)\b(?!-)\s*(.*)$"
         rx.IgnoreCase = False
         Set rxSpaces = CreateObject("VBScript.RegExp")
         rxSpaces.Pattern = "\s+"
@@ -292,6 +395,22 @@ Public Function Get_CobolAction(ByVal txt As String, ByVal lineNumber As Long) A
     Dim verb As String, rest As String, label As String
     verb = rxSpaces.Replace(UCase$(m.Item(0).SubMatches(0)), " ")
     rest = m.Item(0).SubMatches(1)
+    If verb = "EXEC" Then
+        ' DB declarations (BEGIN DECLARE SECTION / DECLARE ... CURSOR) are not
+        ' executable statements - only OPEN/FETCH/CLOSE etc. become actions.
+        ' Word-bounded so identifiers merely containing DECLARE do not match.
+        Static rxDecl As Object
+        If rxDecl Is Nothing Then
+            Set rxDecl = CreateObject("VBScript.RegExp")
+            rxDecl.Pattern = "\bDECLARE\b"
+            rxDecl.IgnoreCase = False
+        End If
+        If rxDecl.Test(rest) Then
+            Set Get_CobolAction = Nothing
+            Exit Function
+        End If
+        rest = Trim$(Replace(rest, "END-EXEC", ""))
+    End If
     label = Convert_CollapseSpaces(verb & " " & rest)
 
     Dim node As OrderedDict

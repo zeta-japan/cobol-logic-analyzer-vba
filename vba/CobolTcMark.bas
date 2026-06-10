@@ -19,7 +19,7 @@ Attribute VB_Name = "CobolTcMark"
 
 Option Explicit
 
-Private Const HIER_SHEET As String = "ロジック階層"
+Private Const HIER_SHEET As String = "ロジック階層(実行順展開)"
 Private Const DATA_SHEET As String = "_TCData"
 Private Const COL_TREE As Long = 1
 Private Const COL_LINE As Long = 2
@@ -234,91 +234,32 @@ End Sub
 ' ===================================================================== '
 '  Rendering: store groups, draw column-D header + buttons, mark group 1 '
 ' ===================================================================== '
-' result: the OrderedDict returned by CobolParser.Analyze_Full (has testCases).
-Public Sub BuildTcMarking(ByVal result As OrderedDict)
+' flow: the OrderedDict returned by CobolFlow.Analyze_Flow (ver3.0 cases).
+Public Sub BuildTcMarking(ByVal flow As OrderedDict)
     On Error GoTo Done_
     Dim ws As Worksheet
     Set ws = JsonParser.EnsureSheet(HIER_SHEET)
 
     ' Always clear any prior run's nav buttons + scratch data FIRST, so a file
-    ' that yields no groups can never leave stale buttons driving MarkGroup_
+    ' that yields no cases can never leave stale buttons driving MarkGroup_
     ' against a freshly rendered (different) tree.
     RemoveBtn_ ws, "btnTcPrev"
     RemoveBtn_ ws, "btnTcNext"
     ResetData_
 
-    If result Is Nothing Then Exit Sub
-    If Not result.Exists("testCases") Then Exit Sub
+    If flow Is Nothing Then Exit Sub
+    If Not flow.Exists("cases") Then Exit Sub
 
-    Dim groups As Collection
-    Set groups = BuildTcGroups(result.Item("testCases"))
-    If groups.Count = 0 Then Exit Sub
+    Dim cases As Collection
+    Set cases = flow.Item("cases")
+    If cases.Count = 0 Then Exit Sub
 
-    StoreGroups_ groups, HeaderRow_(ws)
-    RenderGroupedTC_ groups      ' make テストケース候補 correspond to G1..Gn
-    ws.Activate                 ' StoreGroups_ added/activated _TCData; bring the tree back to front
+    StoreCases_ cases, HeaderRow_(ws)
+    ws.Activate                 ' StoreCases_ added/activated _TCData; bring the tree back to front
     HideData_                   ' now _TCData is not the active sheet -> very-hide succeeds
-    DrawHeaderAndButtons_ ws, groups.Count
+    DrawHeaderAndButtons_ ws, cases.Count
     MarkGroup_ 1
 Done_:
-End Sub
-
-' Render the consolidated test cases (G1..Gn) onto the テストケース候補 sheet so
-' its IDs match the ロジック階層 marking. Each row = one final-Action group with
-' the representative's input conditions and the number of combinatorial paths it
-' subsumes. (Overwrites the raw per-path list; the engine still enumerates all
-' paths internally.)
-Private Sub RenderGroupedTC_(ByVal groups As Collection)
-    On Error GoTo GDone
-    Dim ws As Worksheet
-    Set ws = JsonParser.EnsureSheet("テストケース候補")
-    If ws Is Nothing Then Exit Sub
-    Application.ScreenUpdating = False
-    ws.Cells.Clear
-    ws.Columns("B:C").NumberFormat = "@"   ' COBOL text may contain '=' -> keep literal
-
-    ws.Range("A1").Value = "テストケース候補（最終Actionで集約 ／ ロジック階層の G番号と対応）"
-    With ws.Range("A1").Font
-        .Bold = True: .Size = 13: .Color = RGB(38, 70, 83)
-    End With
-
-    Dim hdr As Long
-    hdr = 3
-    ws.Cells(hdr, 1).Value = "ケース"
-    ws.Cells(hdr, 2).Value = "最終Action（出力結果）"
-    ws.Cells(hdr, 3).Value = "入力条件（代表）"
-    ws.Cells(hdr, 4).Value = "該当パス数"
-    ws.Cells(hdr, 5).Value = "最終Action行"
-    With ws.Range(ws.Cells(hdr, 1), ws.Cells(hdr, 5))
-        .Font.Bold = True
-        .Interior.Color = RGB(217, 225, 232)
-    End With
-
-    Dim i As Long, g As OrderedDict, row As Long
-    row = hdr + 1
-    For i = 1 To groups.Count
-        Set g = groups(i)
-        ws.Cells(row, 1).Value = "G" & i
-        ws.Cells(row, 1).Font.Bold = True
-        ws.Cells(row, 2).Value = CStr(g.Item("finalLabel"))
-        ws.Cells(row, 3).Value = CStr(g.Item("repConditions"))
-        ws.Cells(row, 3).WrapText = True
-        ws.Cells(row, 4).Value = CLng(g.Item("memberCount"))
-        ws.Cells(row, 5).Value = CLng(g.Item("finalLine"))
-        row = row + 1
-    Next i
-
-    ws.Cells(row + 1, 1).Value = "※ ロジック階層シートの「前へ／次へ」で各 G の決定パス・実行行（カバレッジ）を可視化できます。"
-    ws.Cells(row + 1, 1).Font.Color = RGB(120, 120, 120)
-
-    ws.Columns("A").ColumnWidth = 8
-    ws.Columns("B").ColumnWidth = 34
-    ws.Columns("C").ColumnWidth = 64
-    ws.Columns("D").ColumnWidth = 12
-    ws.Columns("E").ColumnWidth = 12
-    Application.ScreenUpdating = True
-GDone:
-    Application.ScreenUpdating = True
 End Sub
 
 Public Sub TC_ShowNext()
@@ -388,27 +329,71 @@ Private Sub ResetData_()
     If Not wd Is Nothing Then wd.Cells(2, 1).Value = 0
 End Sub
 
-Private Sub StoreGroups_(ByVal groups As Collection, ByVal hdrRow As Long)
+' ver3.0: persist CobolFlow cases for the prev/next marking.
+'   col1=finalLine col2=終了形態 col3=caseId col4=系 col5=decisionPath
+'   col6=arm tokens (coverage subset test against the tree's context column)
+Private Sub StoreCases_(ByVal cases As Collection, ByVal hdrRow As Long)
     Dim wd As Worksheet
     Set wd = DataSheet_(True)
     If wd Is Nothing Then Exit Sub
     wd.Cells.Clear
     wd.Columns("A:G").NumberFormat = "@"
     wd.Cells(1, 1).Value = 1            ' current index
-    wd.Cells(2, 1).Value = groups.Count ' group count
+    wd.Cells(2, 1).Value = cases.Count  ' case count
     wd.Cells(1, 2).Value = hdrRow       ' header row of the tree
-    Dim i As Long, g As OrderedDict
-    For i = 1 To groups.Count
-        Set g = groups(i)
-        wd.Cells(2 + i, 1).Value = g.Item("finalLine")
-        wd.Cells(2 + i, 2).Value = g.Item("finalLabel")
-        wd.Cells(2 + i, 3).Value = g.Item("repId")
-        wd.Cells(2 + i, 4).Value = g.Item("memberCount")
-        wd.Cells(2 + i, 5).Value = g.Item("decisionPath")
-        wd.Cells(2 + i, 6).Value = g.Item("repBranchIds")
-        wd.Cells(2 + i, 7).Value = g.Item("repConditions")
+    Dim i As Long, c As OrderedDict
+    For i = 1 To cases.Count
+        Set c = cases(i)
+        wd.Cells(2 + i, 1).Value = c.Item("finalLine")
+        wd.Cells(2 + i, 2).Value = TermLabel_(c)
+        wd.Cells(2 + i, 3).Value = c.Item("id")
+        If CStr(c.Item("kind")) = "normal" Then
+            wd.Cells(2 + i, 4).Value = "正常系シナリオ" & CLng(c.Item("kindSerial"))
+        Else
+            wd.Cells(2 + i, 4).Value = "異常系シナリオ" & CLng(c.Item("kindSerial"))
+        End If
+        wd.Cells(2 + i, 5).Value = DecisionPath_(c)
+        wd.Cells(2 + i, 6).Value = JoinArms_(c)
     Next i
 End Sub
+
+Private Function TermLabel_(ByVal c As OrderedDict) As String
+    Dim t As String
+    t = CStr(c.Item("term"))
+    If t = "goback" Then
+        Dim tv As String
+        If c.Exists("termVerb") Then tv = CStr(c.Item("termVerb"))
+        If Len(tv) = 0 Then tv = "GOBACK"
+        TermLabel_ = tv & "（正常終了）"
+    ElseIf Left$(t, 6) = "abend:" Then
+        TermLabel_ = "異常終了（" & Mid$(t, 7) & " 経由）"
+    ElseIf Left$(t, 6) = "synth:" Then
+        TermLabel_ = "呼出先異常（CALL " & Mid$(t, 7) & "・合成）"
+    Else
+        TermLabel_ = t
+    End If
+End Function
+
+' "117:THEN 132:ELSE ..." from the case's arm events
+Private Function DecisionPath_(ByVal c As OrderedDict) As String
+    Dim s As String, e As OrderedDict
+    For Each e In c.Item("events")
+        If CStr(e.Item("Kind")) = "arm" Then
+            If Len(s) > 0 Then s = s & " "
+            s = s & CLng(e.Item("Line")) & ":" & Replace(CStr(e.Item("Arm")), " ", "_")
+        End If
+    Next e
+    DecisionPath_ = s
+End Function
+
+Private Function JoinArms_(ByVal c As OrderedDict) As String
+    Dim s As String, v As Variant
+    For Each v In c.Item("arms")
+        If Len(s) > 0 Then s = s & ","
+        s = s & CStr(v)
+    Next v
+    JoinArms_ = s
+End Function
 
 Private Sub DrawHeaderAndButtons_(ByVal ws As Worksheet, ByVal groupCount As Long)
     Dim hdrRow As Long
@@ -510,10 +495,11 @@ Private Sub MarkGroup_(ByVal idx As Long)
 
     Dim r As Long
     r = 2 + idx
-    Dim finalLine As Long, finalLabel As String, memberCount As Long, dpEnc As String
+    Dim finalLine As Long, finalLabel As String, caseId As String, kindJp As String, dpEnc As String
     finalLine = CLng(wd.Cells(r, 1).Value)
     finalLabel = CStr(wd.Cells(r, 2).Value)
-    memberCount = CLng(wd.Cells(r, 4).Value)
+    caseId = CStr(wd.Cells(r, 3).Value)
+    kindJp = CStr(wd.Cells(r, 4).Value)
     dpEnc = CStr(wd.Cells(r, 5).Value)
 
     ' decode decision path into a line -> arm map
@@ -561,7 +547,7 @@ Private Sub MarkGroup_(ByVal idx As Long)
         '     clear the previous case's column-D mark.
         colA = CStr(ws.Cells(row, COL_TREE).Value)
         colC = CStr(ws.Cells(row, COL_KIND).Value)
-        isSectionHdr = (InStr(colA, ChrW$(&H25A0)) > 0 And InStr(colA, "SECTION") > 0)
+        isSectionHdr = (InStr(colA, ChrW$(&H25A0)) = 1 And InStr(colA, "SECTION") > 0)
         If isSectionHdr Then
             ws.Range(ws.Cells(row, COL_TREE), ws.Cells(row, COL_KIND)).Interior.Color = C_SECTION
         ElseIf IsBranchKind_(colC) Then
@@ -584,7 +570,7 @@ Private Sub MarkGroup_(ByVal idx As Long)
             isFinal = (CLng(lnVal) = finalLine)
             If armOf.Exists(key) Then
                 arm = CStr(armOf.Item(key))
-                If arm = "ATEND" Then arm = "AT END"
+                arm = Replace(arm, "_", " ")
             End If
         End If
 
@@ -608,8 +594,8 @@ Private Sub MarkGroup_(ByVal idx As Long)
     Next row
 
     ' status line
-    ws.Range("D4").Value = "ケース G" & idx & "/" & cnt & " : " & finalLabel & _
-        "  ｜ " & memberCount & "パス相当  ｜ 凡例 " & ChrW$(&H25C6) & "=最終Action / 緑=分岐選択 / 薄黄=実行行（カバレッジ）"
+    ws.Range("D4").Value = "ケース " & caseId & " （" & kindJp & "） " & idx & "/" & cnt & "  ｜ 終了: " & finalLabel & _
+        "  ｜ 凡例 " & ChrW$(&H25C6) & "=最終Action / 青字=分岐選択 / 薄黄=実行行"
     ws.Range("D4").Font.Color = RGB(80, 80, 80)
 
     Application.ScreenUpdating = True

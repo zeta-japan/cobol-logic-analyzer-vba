@@ -39,7 +39,7 @@ Public Sub RenderExecHierarchy(ByVal ws As Worksheet, ByVal root As Object)
 
     Dim s As Object
     Set s = root("summary")
-    ws.Range("A1").Value = "COBOLロジック階層（実行順）"
+    ws.Range("A1").Value = "COBOLロジック階層（実行順展開）"
     ws.Range("A1").Font.Bold = True
     ws.Range("A1").Font.Size = 14
 
@@ -296,6 +296,7 @@ Private Function ResolvePerform_(ByVal label As String) As OrderedDict
     r.Add "name", x
     r.Add "lo", CLng(ox.Item("line"))
     r.Add "hi", hi
+    r.Add "kind", CStr(ox.Item("kind"))
     Set ResolvePerform_ = r
 End Function
 
@@ -371,6 +372,8 @@ Private Sub RenderNode_(ByVal node As Object, ByVal prefix As String, ByVal isLa
             Else
                 If Not mVisited.Exists(CStr(tgt.Item("name"))) Then mVisited.Add CStr(tgt.Item("name")), True
                 pathStack.Add CStr(tgt.Item("name"))
+                ' banner marking where the PERFORM target is inline-expanded
+                EmitBanner_ childPrefix, tgt, context
                 ' inlined body shares this PERFORM's branch context
                 RenderNodeList_ CLng(tgt.Item("lo")), CLng(tgt.Item("hi")), childPrefix, pathStack, context
                 pathStack.Remove pathStack.Count
@@ -459,6 +462,17 @@ Private Sub RenderUnreached_(ByVal entry As OrderedDict, ByVal pathStack As Coll
     Next o
 End Sub
 
+' Banner row at each PERFORM inline-expansion site, indented to align with the
+' expanded body, so expansion boundaries are easy to spot (team request).
+' Reuses EmitRow_ for the line-number hyperlink, then restyles the text.
+Private Sub EmitBanner_(ByVal prefix As String, ByVal tgt As OrderedDict, ByVal context As String)
+    Dim sfx As String
+    If CStr(tgt.Item("kind")) = "section" Then sfx = " SECTION" Else sfx = ""
+    Dim txt As String
+    txt = prefix & ChrW$(&H25A0) & "--------------- " & CStr(tgt.Item("name")) & sfx & " ---------------"
+    EmitRow_ txt, CLng(tgt.Item("lo")), "", False, context
+    mWs.Cells(mRow - 1, 1).Font.Bold = True
+End Sub
 Private Sub EmitSectionHeader_(ByVal nm As String)
     mWs.Cells(mRow, 1).Value = ChrW$(&H25A0) & " " & nm & " SECTION"
     mWs.Cells(mRow, 1).Font.Bold = True

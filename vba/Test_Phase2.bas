@@ -112,7 +112,7 @@ Public Sub Test_ICASE1_StructureCounts()
     Set s = r.Item("summary")
     ' Expected values from the golden JSON for ICASE1.cbl.
     TestRunner.Assert_Equal CLng(14), CLng(s.Item("branchCount")), "ICASE1 branchCount=14"
-    TestRunner.Assert_Equal CLng(36), CLng(s.Item("actionCount")), "ICASE1 actionCount=36"
+    TestRunner.Assert_Equal CLng(37), CLng(s.Item("actionCount")), "ICASE1 actionCount=37 (incl GOBACK terminal verb, ver3.0)"
     TestRunner.Assert_Equal CLng(8), CLng(s.Item("sectionCount")), "ICASE1 sectionCount=8"
     TestRunner.Assert_Equal CLng(20), CLng(s.Item("paragraphCount")), "ICASE1 paragraphCount=20"
     TestRunner.Assert_Equal CLng(1), CLng(s.Item("performThruCount")), "ICASE1 performThruCount=1"

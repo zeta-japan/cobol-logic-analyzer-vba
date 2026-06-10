@@ -1,28 +1,28 @@
 Attribute VB_Name = "CobolStub"
-' CobolStub - ver2.0 feature (3): generate test Driver + Dummy COBOL skeletons.
-'
-' BuildStubsSheet(cblPath) renders, on a "Driver_Dummy雛形" sheet:
-'   - a test Driver for the analyzed program (declares its LINKAGE arguments,
-'     sets them, DISPLAYs in, CALLs the target, DISPLAYs out)
-'   - one Dummy sub for each external CALL the program makes (LINKAGE built
-'     from the argument PICs found in the program's DATA DIVISION)
-' Skeletons are starting points: argument values and return values are filled
-' in by hand per test case.
+' CobolStub - ver3.0 P5: per-test-case Driver skeleton on the Driver雛形
+' sheet. Dummy generation was retired (team decision - subprograms are
+' linked for real). One driver program runs every NORMAL case in sequence:
+' per case it initializes the parameter, sets the linkage inputs
+' (placeholders - the values live on the 入出力-想定結果 sheet), CALLs the
+' target, and DISPLAYs the expected-output items for comparison.
 
 Option Explicit
 
-Public Sub BuildStubsSheet(ByVal cblPath As String)
+Private Const SHEET_DRV As String = "Driver雛形"
+
+Public Sub BuildDriverSheet(ByVal flow As OrderedDict, ByVal cblPath As String)
     Dim progName As String
     Dim out As Collection
-    Set out = BuildStubLines(cblPath, progName)
-    Render_ out, progName
+    On Error Resume Next
+    Set out = BuildDriverLines(flow, cblPath, progName)
+    On Error GoTo 0
+    Render_ out, progName    ' Nothing-safe: Render_ writes a red diagnostic
 End Sub
 
-' Build the Driver/Dummy skeleton text as a Collection of OrderedDict
-' { text, kind }; the analyzed program name is returned via progNameOut.
-' Public (and free of any sheet I/O) so tests can assert on the generated
-' content without rendering - this isolates "what we build" from "how we draw".
-Public Function BuildStubLines(ByVal cblPath As String, ByRef progNameOut As String) As Collection
+' Build the driver text as a Collection of OrderedDict { text, kind }.
+' Public and sheet-free so Test_Phase8 can assert on the generated content.
+Public Function BuildDriverLines(ByVal flow As OrderedDict, ByVal cblPath As String, _
+                                 ByRef progNameOut As String) As Collection
     Dim src As String
     src = CobolEncoding.ReadCobolSource(cblPath, "auto")
     Dim norm As OrderedDict
@@ -33,44 +33,32 @@ Public Function BuildStubLines(ByVal cblPath As String, ByRef progNameOut As Str
     Dim progName As String
     progName = CobolParser.Get_ProgramName(lines)
     progNameOut = progName
-    Dim usingParams As Collection, calls As Collection, items As Collection, linkage As Collection
+    Dim usingParams As Collection, linkage As Collection
     Set usingParams = CobolCalls.Get_ProcedureUsing(lines)
-    Set calls = CobolCalls.Get_ExternalCalls(lines)
-    Set items = CobolData.Get_DataItems(lines)
     Set linkage = CollectLinkageLines_(lines)
 
-    Dim picMap As OrderedDict
-    Set picMap = BuildPicMap_(items)
+    Dim model As Collection
+    Set model = CobolIoView.BuildIoModel(flow, src)
 
     Dim out As Collection
     Set out = New Collection
-    AppendDriver_ out, progName, usingParams, linkage
-    Emit_ out, "", "blank"
+    Set BuildDriverLines = out
 
-    Dim c As OrderedDict
-    For Each c In calls
-        AppendDummy_ out, c, picMap
-        Emit_ out, "", "blank"
-    Next c
-    If calls.Count = 0 Then
-        Emit_ out, "(外部 CALL が無いため Dummy サブはありません)", "note"
-    End If
-
-    Set BuildStubLines = out
-End Function
-
-Private Sub AppendDriver_(ByVal out As Collection, ByVal progName As String, _
-                          ByVal usingParams As Collection, ByVal linkage As Collection)
-    Emit_ out, "==== テスト用 Driver : " & progName & " を呼び出す ====", "head"
+    Emit_ out, "==== テスト用 Driver : " & progName & " （正常系ケースを順次実行） ====", "head"
     If usingParams.Count = 0 And linkage.Count = 0 Then
         Emit_ out, "* この PGM は LINKAGE / USING が無いため、被呼出サブではありません。", "code"
-        Emit_ out, "* (Driver は不要。下の Dummy のみ利用してください)", "code"
-        Exit Sub
+        Emit_ out, "* (Driver は不要です)", "code"
+        Exit Function
+    End If
+    If model.Count = 0 Then
+        Emit_ out, "(正常系ケースが無いため Driver は生成されません)", "note"
+        Exit Function
     End If
 
-    Emit_ out, "      *--- テストケースは「テストケース候補」シート参照 ---", "code"
+    Emit_ out, "      *--- 設定値・想定値は「入出力-想定結果」シート参照 ---", "code"
     Emit_ out, "       IDENTIFICATION DIVISION.", "code"
     Emit_ out, "       PROGRAM-ID. DRV-" & progName & ".", "code"
+    Emit_ out, "      *  (PROGRAM-ID が 8 文字制限の環境では適宜短縮してください)", "code"
     Emit_ out, "       DATA DIVISION.", "code"
     Emit_ out, "       WORKING-STORAGE SECTION.", "code"
     Emit_ out, "      *--- 対象 " & progName & " の引数 (LINKAGE 由来) ---", "code"
@@ -80,60 +68,60 @@ Private Sub AppendDriver_(ByVal out As Collection, ByVal progName As String, _
     Next v
     Emit_ out, "       PROCEDURE DIVISION.", "code"
     Emit_ out, "       MAIN-RTN.", "code"
-    Emit_ out, "      *--- (1) テストケースに応じて引数へ値を設定 ---", "code"
-    For Each v In usingParams
-        Emit_ out, "      *     MOVE <値> TO " & CStr(v), "code"
-    Next v
-    Emit_ out, "      *--- (2) 入力値を表示 ---", "code"
-    Emit_ out, "           DISPLAY ""=== " & progName & " INPUT ===""", "code"
-    For Each v In usingParams
-        Emit_ out, "           DISPLAY """ & CStr(v) & " = "" " & CStr(v), "code"
-    Next v
-    Emit_ out, "      *--- (3) 対象を呼び出し ---", "code"
-    Emit_ out, "           CALL """ & progName & """ USING " & JoinSp_(usingParams) & ".", "code"
-    Emit_ out, "      *--- (4) 返却値を表示 ---", "code"
-    Emit_ out, "           DISPLAY ""=== " & progName & " OUTPUT ===""", "code"
-    For Each v In usingParams
-        Emit_ out, "           DISPLAY """ & CStr(v) & " = "" " & CStr(v), "code"
-    Next v
+
+    Dim cm As OrderedDict
+    For Each cm In model
+        Emit_ out, "      *==============================================", "code"
+        Emit_ out, "      *  " & CStr(cm.Item("id")) & " （正常系シナリオ" & CLng(cm.Item("kindSerial")) & "）", "code"
+        Emit_ out, "      *  前提: " & PreSummary_(cm), "code"
+        Emit_ out, "      *==============================================", "code"
+        For Each v In usingParams
+            Emit_ out, "           INITIALIZE " & CStr(v), "code"
+        Next v
+        Dim r As OrderedDict
+        If cm.Item("lkIn").Count > 0 Then
+            For Each r In cm.Item("lkIn")
+                Emit_ out, "      *    " & CStr(cm.Item("id")) & " 入力: " & CStr(r.Item("Item")) & "  " & CStr(r.Item("Note")), "code"
+                Emit_ out, "           MOVE SPACE TO " & CStr(r.Item("Item")), "code"
+            Next r
+        Else
+            Emit_ out, "      *    （設定が必要な LINKAGE 入力はありません）", "code"
+        End If
+        If usingParams.Count > 0 Then
+            Emit_ out, "           CALL '" & progName & "' USING " & JoinSp_(usingParams), "code"
+        Else
+            Emit_ out, "           CALL '" & progName & "'", "code"
+        End If
+        Emit_ out, "           DISPLAY '==== " & CStr(cm.Item("id")) & " RESULT ===='", "code"
+        If cm.Item("outs").Count > 0 Then
+            For Each r In cm.Item("outs")
+                Emit_ out, "           DISPLAY '" & CStr(cm.Item("id")) & " " & CStr(r.Item("Item")) & " = ' " & CStr(r.Item("Item")), "code"
+            Next r
+        Else
+            For Each v In usingParams
+                Emit_ out, "           DISPLAY '" & CStr(cm.Item("id")) & " " & CStr(v) & " = ' " & CStr(v), "code"
+            Next v
+        End If
+    Next cm
+
     Emit_ out, "           STOP RUN.", "code"
-End Sub
+    Emit_ out, "", "blank"
+    Emit_ out, "※ 異常系ケースは Driver 生成対象外です（機上確認推奨・テストケース候補シート参照）", "note"
+End Function
 
-Private Sub AppendDummy_(ByVal out As Collection, ByVal callRec As OrderedDict, ByVal picMap As OrderedDict)
-    Dim subName As String
-    subName = CStr(callRec.Item("program"))
-    Dim args As Collection
-    Set args = callRec.Item("args")
-
-    Emit_ out, "==== Dummy サブ : " & subName & " (返却値はテストケースに応じて設定) ====", "head"
-    Emit_ out, "       IDENTIFICATION DIVISION.", "code"
-    Emit_ out, "       PROGRAM-ID. " & subName & ".", "code"
-    Emit_ out, "       DATA DIVISION.", "code"
-    Emit_ out, "       LINKAGE SECTION.", "code"
-    Emit_ out, "      *--- 呼出元から渡される引数 (CALL USING より) ---", "code"
-    Dim v As Variant, pic As String
-    For Each v In args
-        If picMap.Exists(CStr(v)) Then
-            pic = CStr(picMap.Item(CStr(v)))
-        Else
-            pic = ""
-        End If
-        If pic <> "" Then
-            Emit_ out, "       01  " & CStr(v) & "  PIC " & pic & ".", "code"
-        Else
-            Emit_ out, "       01  " & CStr(v) & "  PIC X.   *> 桁/型はサブ仕様に合わせて修正", "code"
-        End If
+Private Function PreSummary_(ByVal cm As OrderedDict) As String
+    Dim s As String, v As Variant
+    For Each v In cm.Item("dbPre")
+        If Len(s) > 0 Then s = s & " ／ "
+        s = s & CStr(v)
     Next v
-    If args.Count > 0 Then
-        Emit_ out, "       PROCEDURE DIVISION USING " & JoinSp_(args) & ".", "code"
-    Else
-        Emit_ out, "       PROCEDURE DIVISION.", "code"
-    End If
-    Emit_ out, "       DUMMY-RTN.", "code"
-    Emit_ out, "      *--- テストケースに応じて返却値を設定 ---", "code"
-    Emit_ out, "      *     MOVE <返却値> TO <出力引数>", "code"
-    Emit_ out, "           GOBACK.", "code"
-End Sub
+    For Each v In cm.Item("subPre")
+        If Len(s) > 0 Then s = s & " ／ "
+        s = s & CStr(v)
+    Next v
+    If Len(s) = 0 Then s = "（特記なし）"
+    PreSummary_ = s
+End Function
 
 ' Collect the LINKAGE SECTION item lines (normalized text), for re-declaration
 ' in the Driver's WORKING-STORAGE. Faithful to COPY / OCCURS / PREFIXING.
@@ -167,18 +155,6 @@ Private Function CollectLinkageLines_(ByVal lines As Collection) As Collection
     Set CollectLinkageLines_ = result
 End Function
 
-Private Function BuildPicMap_(ByVal items As Collection) As OrderedDict
-    Dim map As OrderedDict
-    Set map = New OrderedDict
-    Dim it As OrderedDict
-    For Each it In items
-        If CStr(it.Item("pic")) <> "" And Not map.Exists(CStr(it.Item("name"))) Then
-            map.Add CStr(it.Item("name")), it.Item("pic")
-        End If
-    Next it
-    Set BuildPicMap_ = map
-End Function
-
 Private Function JoinSp_(ByVal c As Collection) As String
     Dim s As String, v As Variant, first As Boolean
     first = True
@@ -200,22 +176,21 @@ End Sub
 
 Private Sub Render_(ByVal out As Collection, ByVal progName As String)
     Dim ws As Worksheet
-    Set ws = JsonParser.EnsureSheet("Driver_Dummy雛形")
+    Set ws = JsonParser.EnsureSheet(SHEET_DRV)
 
     Application.ScreenUpdating = False
     ws.Cells.Clear
 
     ' Column A holds raw COBOL skeleton text. Header rows begin with "===="
     ' and Excel would treat a leading "=" as a FORMULA (runtime error 1004 on
-    ' assignment), which previously aborted the whole render. Forcing the column
-    ' to Text makes every value store literally, "=" and all.
+    ' assignment). Forcing the column to Text makes every value store literally.
     ws.Columns(1).NumberFormat = "@"
 
-    ws.Range("A1").value = "Driver / Dummy 雛形 : " & progName
+    ws.Range("A1").Value = "Driver 雛形 : " & progName & " （正常系ケース毎に 設定 → CALL → DISPLAY）"
     With ws.Range("A1").Font
         .Name = "Meiryo UI": .Size = 14: .Bold = True: .Color = RGB(38, 70, 83)
     End With
-    ws.Range("A2").value = "※ 雛形です。引数値・返却値はテストケースに応じて手で設定してください。COPY句は本体未展開です。"
+    ws.Range("A2").Value = "※ 雛形です。MOVE の設定値は「入出力-想定結果」シートに合わせて手で記入してください。"
     With ws.Range("A2").Font
         .Name = "Meiryo UI": .Size = 9: .Color = RGB(120, 120, 120)
     End With
@@ -223,19 +198,14 @@ Private Sub Render_(ByVal out As Collection, ByVal progName As String)
     Dim row As Long
     row = 4
 
-    ' Guard: never leave the sheet silently empty. If there is nothing to draw
-    ' (or the collection was lost), say so on the sheet instead of looking blank.
     Dim n As Long
     If out Is Nothing Then n = -1 Else n = out.Count
     If n <= 0 Then
-        ws.Cells(row, 1).value = "(診断: 生成対象の行がありません。out=" & n & ")"
+        ws.Cells(row, 1).Value = "(診断: 生成対象の行がありません。out=" & n & ")"
         ws.Cells(row, 1).Font.Color = RGB(192, 0, 0)
         GoTo Finish_
     End If
 
-    ' Index-based loop (deterministic; avoids any For Each enumerator quirk).
-    ' Per-row error capture: a single bad row is reported in place, the rest
-    ' still render - the loop can no longer abort the whole sheet.
     Dim e As OrderedDict, kind As String, txt As String, i As Long
     For i = 1 To n
         kind = ""
@@ -244,10 +214,10 @@ Private Sub Render_(ByVal out As Collection, ByVal progName As String)
         Set e = out.Item(i)
         kind = CStr(e.Item("kind"))
         txt = CStr(e.Item("text"))
-        ws.Cells(row, 1).value = txt
+        ws.Cells(row, 1).Value = txt
         If Err.Number <> 0 Then
             kind = "note"
-            ws.Cells(row, 1).value = "(診断: 行 " & i & " でエラー #" & Err.Number & " " & Err.Description & ")"
+            ws.Cells(row, 1).Value = "(診断: 行 " & i & " でエラー #" & Err.Number & " " & Err.Description & ")"
             Err.Clear
         End If
         On Error GoTo 0

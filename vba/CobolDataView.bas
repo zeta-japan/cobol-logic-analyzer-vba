@@ -5,7 +5,8 @@ Attribute VB_Name = "CobolDataView"
 
 Option Explicit
 
-Public Sub BuildDataItemsSheet(ByVal cblPath As String)
+' retired in ver3.0 - replaced by CobolIoView (kept for reference)
+Private Sub BuildDataItemsSheet(ByVal cblPath As String)
     Dim src As String
     src = CobolEncoding.ReadCobolSource(cblPath, "auto")
     Dim norm As OrderedDict

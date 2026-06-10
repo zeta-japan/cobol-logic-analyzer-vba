@@ -92,7 +92,7 @@ Public Sub SetupControlSheet()
         .Font.Color = cText
     End With
     ws.Range("B7").value = "1.  下の［解析］ボタンを押して、解析したい COBOL ソース (.cbl) を選択" & Chr(10) & _
-                           "2.  解析結果が 5 つのシートに自動生成されます (再実行で自動上書き)"
+                           "2.  解析結果が 複数のシートに自動生成されます (再実行で自動上書き)"
     ws.Rows("7:8").RowHeight = 20
 
     ' --- analyze button (rounded rectangle shape) ------------------------
@@ -130,10 +130,10 @@ Public Sub SetupControlSheet()
         .VerticalAlignment = xlCenter
     End With
     ws.Range("B14").value = "①  COBOLソース       元コード + 通し行番号"
-    ws.Range("B15").value = "②  ロジック階層       IF / EVALUATE / SEARCH の入れ子をツリー表示"
-    ws.Range("B16").value = "③  テストケース候補   全実行パスからテストケース表を自動生成"
-    ws.Range("B17").value = "④  分岐カバレッジ     各分岐の網羅状況と警告"
-    ws.Range("B18").value = "⑤  呼出関係           PERFORM / CALL / 段落 の呼出関係"
+    ws.Range("B15").value = "②  ロジック階層(2種)   ソース順 / 実行順展開(テストケース標記付き)"
+    ws.Range("B16").value = "③  テストケース候補   実行流から正常系(C1最少)+異常系シナリオを生成"
+    ws.Range("B17").value = "④  分岐カバレッジ表   検証Point×ケースのマトリクス(漏れは赤表示)"
+    ws.Range("B18").value = "⑤  入出力-想定結果 / Driver雛形 / 呼出関係 ほか"
     ws.Rows("14:18").RowHeight = 19
 
     ' --- footer ----------------------------------------------------------
@@ -147,6 +147,23 @@ Public Sub SetupControlSheet()
         .Name = "Meiryo UI"
         .Size = 9
         .Color = cMuted
+    End With
+
+    ' --- ver3.0: terminator section registration -------------------------
+    ws.Range("B22").value = "■ 終了扱いセクション（ABEND処理段など・任意）"
+    StyleHeading_ ws.Range("B22"), cAccent
+    ws.Range("B23").value = "下のセルにセクション名を入力すると、解析時に「そこへの PERFORM = 異常終了」として扱います（例: S991-ABEND-PROC）"
+    With ws.Range("B23").Font
+        .Name = "Meiryo UI"
+        .Size = 9
+        .Color = cMuted
+    End With
+    With ws.Range("B24:B29")
+        .Interior.Color = cWhite
+        .Font.Name = "MS Gothic"
+        .Borders.LineStyle = xlContinuous
+        .Borders.Color = RGB(200, 200, 200)
+        .NumberFormat = "@"
     End With
 
     ws.Range("A1").Select
@@ -196,29 +213,58 @@ Public Sub AnalyzeAndBuild(ByVal cblPath As String)
     jsonPath = Environ$("TEMP") & "\CobolAnalyzer_" & baseName & ".logic.json"
     CobolEncoding.WriteAllText jsonPath, json, "utf-8"
 
+    ' ver2.2: the hierarchy sheet was split into (ソース順)/(実行順展開).
+    ' Drop the legacy combined sheet so an old copy cannot linger stale.
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    ThisWorkbook.Sheets("ロジック階層").Delete
+    ThisWorkbook.Sheets("入力項目").Delete
+    ThisWorkbook.Sheets("Driver_Dummy雛形").Delete
+    Application.DisplayAlerts = True
+    On Error GoTo 0
+
     ' Suppress this call's own "done" dialog; one notice is shown at the very end
     ' so it does not interrupt before the ver2.0 sheets are built.
     CobolLogicViewer.BuildCobolReport jsonPath, False
 
-    ' ver2.1: mark test-case decision paths onto the logic-hierarchy tree (column D)
+    ' ver3.0: execution-flow case generation -> tree marking + case sheets
+    Dim flowR As OrderedDict, flowErr As String
+    flowErr = ""
     On Error Resume Next
-    CobolTcMark.BuildTcMarking result
+    Set flowR = CobolFlow.Analyze_Flow(src, Get_TermSections())
+    If Err.Number <> 0 Then flowErr = "#" & Err.Number & " " & Err.Description
     On Error GoTo 0
+    ' BuildTcMarking must run even when flowR is Nothing - it clears the
+    ' previous run's nav buttons / scratch data (stale-marking guard).
+    On Error Resume Next
+    CobolTcMark.BuildTcMarking flowR
+    On Error GoTo 0
+    If Not flowR Is Nothing Then
+        On Error Resume Next
+        CobolCaseView.BuildCaseSheets flowR
+        On Error GoTo 0
+    Else
+        FlowFailBanner_ flowErr
+    End If
 
     ' ver2.0 feature (1): call/usage relationship diagram sheet
     On Error Resume Next
     CobolDiagram.BuildCallDiagram cblPath
     On Error GoTo 0
 
-    ' ver2.0 feature (2): data items / arguments sheet
-    On Error Resume Next
-    CobolDataView.BuildDataItemsSheet cblPath
-    On Error GoTo 0
+    ' ver3.0 P4: per-case input setup / expected results sheet
+    If Not flowR Is Nothing Then
+        On Error Resume Next
+        CobolIoView.BuildIoSheet flowR, src
+        On Error GoTo 0
+    End If
 
-    ' ver2.0 feature (3): Driver / Dummy skeletons sheet
-    On Error Resume Next
-    CobolStub.BuildStubsSheet cblPath
-    On Error GoTo 0
+    ' ver3.0 P5: per-case Driver skeleton (Dummy retired)
+    If Not flowR Is Nothing Then
+        On Error Resume Next
+        CobolStub.BuildDriverSheet flowR, cblPath
+        On Error GoTo 0
+    End If
 
     On Error Resume Next
     Kill jsonPath
@@ -226,13 +272,48 @@ Public Sub AnalyzeAndBuild(ByVal cblPath As String)
 
     ' Single completion notice, after every sheet (incl. ver2.0) is built.
     On Error Resume Next
-    ThisWorkbook.Sheets("ロジック階層").Activate
+    ThisWorkbook.Sheets("ロジック階層(実行順展開)").Activate
     On Error GoTo 0
     MsgBox "解析が完了しました。" & vbLf & vbLf & _
            "生成シート:" & vbLf & _
-           "・COBOLソース / ロジック階層 / テストケース候補 / 分岐カバレッジ / 呼出関係" & vbLf & _
-           "・呼出関係図 / 入力項目 / Driver_Dummy雛形", vbInformation
+           "・COBOLソース / ロジック階層(ソース順) / ロジック階層(実行順展開)" & vbLf & _
+           "・テストケース候補 / 分岐カバレッジ表 / 分岐カバレッジ" & vbLf & _
+           "・呼出関係 / 呼出関係図 / 入出力-想定結果 / Driver雛形", vbInformation
 End Sub
+
+' ver3.0: terminator sections registered on the control sheet (B24:B29).
+' A path reaching PERFORM <one of these> is treated as an abnormal end
+' (ABEND handler etc.). Empty/missing sheet = no registered terminators.
+' ver3.0: when case generation fails, show a clear banner on the case sheets
+' (instead of silently leaving the previous content) with the engine error.
+Private Sub FlowFailBanner_(ByVal msg As String)
+    On Error Resume Next
+    Dim nm As Variant, ws As Worksheet
+    For Each nm In Array("テストケース候補", "分岐カバレッジ表", "入出力-想定結果", "Driver雛形")
+        Set ws = JsonParser.EnsureSheet(CStr(nm))
+        ws.Cells.Clear
+        ws.Range("A1").value = "ver3.0 ケース生成に失敗しました（解析エラー）"
+        ws.Range("A1").Font.Bold = True
+        ws.Range("A1").Font.Color = RGB(192, 0, 0)
+        ws.Range("A2").value = "エラー: " & msg & "  → この表示のスクリーンショットを開発側へ共有してください"
+    Next nm
+    On Error GoTo 0
+End Sub
+Public Function Get_TermSections() As Collection
+    Dim c As Collection
+    Set c = New Collection
+    Set Get_TermSections = c
+    On Error Resume Next
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets("コントロール")
+    If ws Is Nothing Then Exit Function
+    Dim r As Long, v As String
+    For r = 24 To 29
+        v = Trim$(CStr(ws.Cells(r, 2).value))
+        If Len(v) > 0 Then c.Add UCase$(v)
+    Next r
+    On Error GoTo 0
+End Function
 
 ' Phase 1 smoke test: write a minimal JSON summary to A1 of the active sheet.
 Public Sub Sub_RunHello()
