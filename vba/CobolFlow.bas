@@ -26,6 +26,10 @@ Option Explicit
 
 Private Const MAX_TRACES As Long = 200
 Private mOps As Long   ' heartbeat counter: keep Excel responsive on big programs
+' every cons node ever allocated this run - unlinked iteratively at the end,
+' because letting VB tear down a long Prev chain recursively can blow the
+' native stack (classic linked-list teardown crash, untrappable in VBA)
+Private mConsReg As Collection
 
 Private mNodes As Collection      ' AST root nodes
 Private mOwners As Collection     ' {name,line,kind,ownerEnd,secEnd} sorted
@@ -89,6 +93,7 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
     Set mSynth = New OrderedDict
     mTruncated = False
     mOps = 0
+    Set mConsReg = New Collection
 
     ' stage labels: comment with full-width parens just above a section header
     Dim secLabels As OrderedDict
@@ -144,6 +149,7 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
     Else
         result.Add "entryName", CStr(entry.Item("name"))
     End If
+    UnlinkCons_   ' cases hold materialized Collections by now
     Set Analyze_Flow = result
 End Function
 
@@ -499,8 +505,21 @@ Private Function Cons_(ByVal head As ConsList, ByVal item As Variant) As ConsLis
     End If
     Set n.Prev = head
     If head Is Nothing Then n.N = 1 Else n.N = head.N + 1
+    If mConsReg Is Nothing Then Set mConsReg = New Collection
+    mConsReg.Add n
     Set Cons_ = n
 End Function
+
+' Iteratively break every Prev link so node teardown never recurses.
+' Called once per run after all selected cases are materialized.
+Private Sub UnlinkCons_()
+    If mConsReg Is Nothing Then Exit Sub
+    Dim n As ConsList
+    For Each n In mConsReg
+        Set n.Prev = Nothing
+    Next n
+    Set mConsReg = New Collection
+End Sub
 
 Private Function ConsCount_(ByVal head As ConsList) As Long
     If head Is Nothing Then ConsCount_ = 0 Else ConsCount_ = head.N

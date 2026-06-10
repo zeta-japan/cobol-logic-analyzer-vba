@@ -231,6 +231,13 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
         row = row + 1
     Next a
 
+    If row > hdr + 1 Then
+        With ws.Range(ws.Cells(hdr + 1, 2), ws.Cells(row - 1, 2)).Font
+            .Color = RGB(5, 99, 193)
+            .Underline = True
+        End With
+    End If
+
     ' footer: ån / èIóπå`ë‘ / ëŒè€
     row = row + 1
     ws.Cells(row, 1).Value = "ån"

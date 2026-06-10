@@ -222,6 +222,10 @@ Private Sub RenderHierarchy(ws As Worksheet, root As Object)
     treeEnd = row - 1
     If treeEnd >= treeStart Then
         ws.Range(ws.Cells(treeStart, 1), ws.Cells(treeEnd, 1)).Font.Name = "MS Gothic"
+        With ws.Range(ws.Cells(treeStart, 2), ws.Cells(treeEnd, 2)).Font
+            .Color = RGB(5, 99, 193)
+            .Underline = True
+        End With
     End If
 
     RenderWarnings ws, root, row

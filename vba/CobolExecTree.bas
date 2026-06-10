@@ -97,7 +97,15 @@ Public Sub RenderExecHierarchy(ByVal ws As Worksheet, ByVal root As Object)
     If mOverflow Then
         mWs.Cells(mRow, 1).Value = "※ 展開行数が上限(" & MAX_TREE_ROWS & "行)を超えたため以降を省略しました（PERFORM 多用プログラム）"
         mWs.Cells(mRow, 1).Font.Color = RGB(192, 0, 0)
+        mWs.Cells(mRow, COL_CTX).Value = UNREACHED_CTX   ' keep coverage marking off this row
         mRow = mRow + 1
+    End If
+    If treeEnd >= treeStart Then
+        ' HYPERLINK formulas do not get the built-in link style - restore it once
+        With mWs.Range(mWs.Cells(treeStart, 2), mWs.Cells(treeEnd, 2)).Font
+            .Color = RGB(5, 99, 193)
+            .Underline = True
+        End With
     End If
     If treeEnd >= treeStart Then
         ws.Range(ws.Cells(treeStart, 1), ws.Cells(treeEnd, 1)).Font.Name = "MS Gothic"
@@ -479,9 +487,14 @@ Private Sub EmitBanner_(ByVal prefix As String, ByVal tgt As OrderedDict, ByVal 
     Dim txt As String
     txt = prefix & ChrW$(&H25A0) & "--------------- " & CStr(tgt.Item("name")) & sfx & " ---------------"
     EmitRow_ txt, CLng(tgt.Item("lo")), "", False, context
+    If mOverflow Then Exit Sub   ' row was suppressed - do not restyle the previous row
     mWs.Cells(mRow - 1, 1).Font.Bold = True
 End Sub
 Private Sub EmitSectionHeader_(ByVal nm As String)
+    If mRow > MAX_TREE_ROWS Then
+        mOverflow = True
+        Exit Sub
+    End If
     mWs.Cells(mRow, 1).Value = ChrW$(&H25A0) & " " & nm & " SECTION"
     mWs.Cells(mRow, 1).Font.Bold = True
     mWs.Range(mWs.Cells(mRow, 1), mWs.Cells(mRow, 3)).Interior.Color = C_SECTION

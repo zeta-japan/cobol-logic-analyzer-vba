@@ -258,15 +258,20 @@ Public Sub BuildTcMarking(ByVal flow As OrderedDict)
     ws.Activate                 ' StoreCases_ added/activated _TCData; bring the tree back to front
     HideData_                   ' now _TCData is not the active sheet -> very-hide succeeds
     DrawHeaderAndButtons_ ws, cases.Count
+    On Error Resume Next
+    ws.Calculate   ' resolve HYPERLINK line numbers under manual calc before marking
+    On Error GoTo 0
     MarkGroup_ 1
 Done_:
 End Sub
 
 Public Sub TC_ShowNext()
+    If Main.AnalysisBusy() Then Exit Sub
     StepGroup_ 1
 End Sub
 
 Public Sub TC_ShowPrev()
+    If Main.AnalysisBusy() Then Exit Sub
     StepGroup_ -1
 End Sub
 

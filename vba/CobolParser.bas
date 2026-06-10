@@ -17,6 +17,7 @@ Private mUnclosedFrames As Long
 Private mPathTruncated As Boolean
 Private mExpandCalls As Long
 Private mExpandOps As Long   ' heartbeat counter (DoEvents) for big programs
+Private mConsReg As Collection   ' cons nodes this run (iterative unlink at end)
 
 Public Property Get UnclosedFrames() As Long
     UnclosedFrames = mUnclosedFrames
@@ -951,6 +952,7 @@ End Function
 Public Function Expand_NodeSequence(ByVal nodes As Collection, ByVal conditions As Collection, _
         ByVal actions As Collection, ByVal lines As Collection, ByVal branchIds As Collection) As Collection
     mExpandOps = 0
+    Set mConsReg = New Collection
     Dim states As Collection
     Set states = ExpandCons_(nodes, SeedCons_(conditions), SeedCons_(actions), _
                              SeedCons_(lines), SeedCons_(branchIds))
@@ -958,6 +960,13 @@ Public Function Expand_NodeSequence(ByVal nodes As Collection, ByVal conditions 
     For Each s In states
         MaterializeState_ s
     Next s
+    ' iteratively break the Prev chains: recursive COM teardown of long
+    ' lists can blow the native stack (untrappable). Linear, share-safe.
+    Dim cn As ConsList
+    For Each cn In mConsReg
+        Set cn.Prev = Nothing
+    Next cn
+    Set mConsReg = New Collection
     Set Expand_NodeSequence = states
 End Function
 
@@ -1075,6 +1084,8 @@ Private Function Cons_(ByVal head As ConsList, ByVal item As Variant) As ConsLis
     End If
     Set n.Prev = head
     If head Is Nothing Then n.N = 1 Else n.N = head.N + 1
+    If mConsReg Is Nothing Then Set mConsReg = New Collection
+    mConsReg.Add n
     Set Cons_ = n
 End Function
 

@@ -8,6 +8,16 @@ Attribute VB_Name = "Main"
 
 Option Explicit
 
+' re-entrancy latch: DoEvents heartbeats pump the message queue, and
+' EnableEvents=False does NOT block button OnAction macros - without this,
+' clicking 解析 again mid-run re-enters the pipeline and corrupts module
+' state. TC nav buttons check it too (via AnalysisBusy).
+Private mBusy As Boolean
+
+Public Function AnalysisBusy() As Boolean
+    AnalysisBusy = mBusy
+End Function
+
 ' Build (or rebuild) a product-style control sheet: header band, usage card,
 ' a rounded "analyze" button, the output-sheet list, and a footer. Run once in
 ' the dev workbook, then save; everything persists in the distributed .xlsm.
@@ -198,6 +208,9 @@ Public Sub AnalyzeAndBuild(ByVal cblPath As String)
     Dim src As String
     src = CobolEncoding.ReadCobolSource(cblPath, "auto")
 
+    If mBusy Then Exit Sub   ' re-entrant click during a running analysis
+    mBusy = True
+
     ' performance shell: manual recalc + no events while the sheets build;
     ' restored by PerfRestore_ (HYPERLINK formulas resolve on that recalc).
     Dim prevCalc As Long
@@ -206,18 +219,20 @@ Public Sub AnalyzeAndBuild(ByVal cblPath As String)
     Application.EnableEvents = False
     Application.StatusBar = "解析中 (1/4): エンジン解析・パス列挙..."
 
-    Dim result As OrderedDict, engineErr As String
+    Dim result As OrderedDict, engineErr As String, engineErrN As Long
+    Dim json As String
     On Error Resume Next
     Set result = CobolParser.Analyze_Full(src, "", "utf-8")
-    If Err.Number <> 0 Then engineErr = "#" & Err.Number & " " & Err.Description
+    If Err.Number = 0 And Not result Is Nothing Then json = JsonWriter.WriteJson(result)
+    If Err.Number <> 0 Then
+        engineErrN = Err.Number
+        engineErr = "#" & Err.Number & " " & Err.Description
+    End If
     On Error GoTo 0
-    If result Is Nothing Then
+    If result Is Nothing Or engineErrN <> 0 Then
         PerfRestore_ prevCalc
         Err.Raise 5, "Main.AnalyzeAndBuild", "エンジン解析に失敗しました " & engineErr
     End If
-
-    Dim json As String
-    json = JsonWriter.WriteJson(result)
 
     ' Write the intermediate JSON to TEMP (never next to the source), hand it to
     ' the viewer, then delete it. The viewer reads the whole file into memory up
@@ -226,7 +241,16 @@ Public Sub AnalyzeAndBuild(ByVal cblPath As String)
     baseName = Mid$(cblPath, InStrRev(cblPath, "\") + 1)
     Dim jsonPath As String
     jsonPath = Environ$("TEMP") & "\CobolAnalyzer_" & baseName & ".logic.json"
+    On Error Resume Next
     CobolEncoding.WriteAllText jsonPath, json, "utf-8"
+    If Err.Number <> 0 Then
+        engineErrN = Err.Number
+        engineErr = "#" & Err.Number & " " & Err.Description
+        On Error GoTo 0
+        PerfRestore_ prevCalc
+        Err.Raise 5, "Main.AnalyzeAndBuild", "中間ファイル出力に失敗しました " & engineErr
+    End If
+    On Error GoTo 0
 
     ' ver2.2: the hierarchy sheet was split into (ソース順)/(実行順展開).
     ' Drop the legacy combined sheet so an old copy cannot linger stale.
@@ -308,7 +332,9 @@ End Sub
 Private Sub PerfRestore_(ByVal prevCalc As Long)
     On Error Resume Next
     Application.StatusBar = False
+    Application.Calculate   ' resolve HYPERLINK formulas even if the user runs manual calc
     Application.Calculation = prevCalc
+    mBusy = False
     Application.EnableEvents = True
     Application.ScreenUpdating = True
     On Error GoTo 0
