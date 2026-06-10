@@ -1,8 +1,8 @@
 Attribute VB_Name = "Test_Phase11"
-' Test_Phase11 - ver3.0 P2: execution-flow enumeration + case generation
-' (CobolFlow.Analyze_Flow) validated against the PS oracle expectations on
-' the ICASE3 fixture: 14 arms, 6 feasible normal paths (constant propagation
-' prunes 6 contradictory ones), cases = 3 normal + 3 code-abend + 2
+' Test_Phase11 - ver3.1: directed-path case generation (CobolFlow.Analyze_Flow)
+' validated against the ver4 PS oracle on the ICASE3 fixture: 14 arms,
+' 12 normal candidate walks (2 seeds + per-arm directed walks; 1 walk misses
+' its target, 3 walks end in ABEND), cases = 3 normal + 3 code-abend + 2
 ' synthesized call-failures, full arm coverage, no infeasible combination.
 
 Option Explicit

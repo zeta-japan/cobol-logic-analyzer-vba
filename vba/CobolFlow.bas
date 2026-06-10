@@ -18,8 +18,8 @@ Attribute VB_Name = "CobolFlow"
 ' Analyze_Flow returns OrderedDict:
 '   cases   - Collection of case OrderedDicts (see BuildCase_)
 '   arms    - Collection of {Token, Line, Disp} for every branch arm
-'   normalPaths / abendPaths - Long counts (after pruning)
-'   truncated - Boolean (MAX_TRACES cap hit; coverage may be partial)
+'   normalPaths / abendPaths - Long counts of surviving candidate walks
+'   truncated - Boolean (always False since ver3.1: directed walks never fork)
 '   entryName - String
 
 Option Explicit
@@ -59,7 +59,9 @@ Private mTermSecs As OrderedDict  ' registered terminator section names
 Private mDesc As OrderedDict      ' item -> Collection of descendant names
 Private mAnc As OrderedDict       ' item -> Collection of ancestor names
 Private mCondItems As OrderedDict ' identifiers used in any branch condition
-Private mSynth As OrderedDict     ' call target -> {Trace, Line} first site
+Private mSynth As OrderedDict     ' call target -> {Line, Target, NeedTok, PrefElse}
+                                  ' (first site + walk identity; the synth case is
+                                  '  reproduced by a pass-2 stop-at-call re-walk)
 Private mTruncated As Boolean
 
 '======================================================================
@@ -1377,9 +1379,9 @@ Private Sub ApplyEvaluate_(ByVal node As OrderedDict, ByVal stack As Collection,
         hasKnown = True
     End If
 
-    Dim cs As Collection, w As OrderedDict, lit As String, isOther As Boolean
+    Dim cs As Collection, w As OrderedDict, lit As String
     Set cs = node.Item("cases")
-    Dim anyTaken As Boolean, litAll As Boolean
+    Dim litAll As Boolean
     litAll = True
     Dim wi As Long
     ' if every WHEN value is a literal and expr known, select just one arm
@@ -1783,11 +1785,7 @@ Private Function BuildCase_(ByVal tr As OrderedDict, ByVal id As String, ByVal k
     c.Add "term", tr.Item("Term")
     c.Add "triggerLine", tr.Item("TriggerLine")
     ' materialize the cons lists for this selected case only
-    If tr.Exists("ArmsL") Then
-        c.Add "arms", tr.Item("ArmsL")
-    Else
-        c.Add "arms", ConsToList_(tr.Item("Arms"))
-    End If
+    c.Add "arms", ConsToList_(tr.Item("Arms"))
     Dim evs As Collection
     Set evs = ConsToList_(tr.Item("Events"))
     c.Add "events", evs
