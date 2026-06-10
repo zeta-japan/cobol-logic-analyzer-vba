@@ -36,6 +36,22 @@ Private mConsReg As Collection
 Private mRangeCache As OrderedDict
 Private mOwnerIdx As OrderedDict
 
+' ---- directed path construction (ver3.1) ----
+' Enumerating all paths is exponential in the branch count; for C1 coverage
+' we instead build ONE path per branch arm: ancestors of the target arm are
+' steered as required (mNeed), every other branch takes a default feasible
+' arm preferring the one that does not run into an ABEND terminator. Two
+' seed walks (THEN-pref / ELSE-pref) cover most arms up front. Work is
+' O(arms x path length) - linear, validated by the ver4 PS oracle.
+Private mNeed As OrderedDict       ' required arm tokens for the current walk
+Private mPrefElse As Boolean       ' seed preference for unsteered branches
+Private mMissed As Boolean         ' walk could not honor a required arm
+Private mRecordEvents As Boolean   ' pass 2 records events; pass 1 arms only
+Private mStopAtCall As String      ' pass 2 synth: end the walk at this CALL
+Private mArmCtx As OrderedDict     ' arm token -> Collection of ancestor tokens
+Private mCtxVisited As OrderedDict ' sections already context-walked
+Private mCurTok As String          ' walk identity (for synth re-walk specs)
+
 Private mNodes As Collection      ' AST root nodes
 Private mOwners As Collection     ' {name,line,kind,ownerEnd,secEnd} sorted
 Private mCut As OrderedDict       ' plain-PERFORM target names
@@ -107,28 +123,39 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
     Dim secLabels As OrderedDict
     Set secLabels = BuildSecLabels_(norm)
 
-    ' enumerate from the entry section
+    Dim arms As Collection
+    Set arms = New Collection
+    CollectArms_ mNodes, arms
+
+    ' pass 1: directed candidate walks (two seeds + one walk per arm),
+    ' arms/term only - no event recording, no forking, linear work
     Dim entry As OrderedDict
     Set entry = FindEntry_()
-    Dim allTraces As Collection
-    Set allTraces = New Collection
+    Dim cands As Collection
+    Set cands = New Collection
+    Dim w As OrderedDict
     If Not entry Is Nothing And mNodes.Count > 0 Then
-        Dim t0 As OrderedDict
-        Set t0 = NewTrace_()
-        AddEnterEvent_ t0, CStr(entry.Item("name")), secLabels, CLng(entry.Item("line"))
-        Dim seed As Collection, stack As Collection
-        Set seed = New Collection
-        seed.Add t0
-        Set stack = New Collection
-        stack.Add CStr(entry.Item("name"))
-        Set allTraces = ApplyRange_(CLng(entry.Item("line")), CLng(entry.Item("secEnd")), stack, seed, secLabels)
+        BuildArmCtx_ entry, secLabels
+        mRecordEvents = False
+        mStopAtCall = ""
+        Set w = WalkTo_("", False, entry, secLabels)
+        If CStr(w.Item("Term")) <> "" Then cands.Add w
+        Set w = WalkTo_("", True, entry, secLabels)
+        If CStr(w.Item("Term")) <> "" Then cands.Add w
+        Dim a As OrderedDict
+        For Each a In arms
+            If mArmCtx.Exists(CStr(a.Item("Token"))) Then
+                Set w = WalkTo_(CStr(a.Item("Token")), False, entry, secLabels)
+                If CStr(w.Item("Term")) <> "" And Not CBool(w.Item("Missed")) Then cands.Add w
+            End If
+        Next a
     End If
 
-    ' split normal / abend
+    ' split normal / abend candidates
     Dim normals As Collection, abends As Collection, tr As OrderedDict
     Set normals = New Collection
     Set abends = New Collection
-    For Each tr In allTraces
+    For Each tr In cands
         If CStr(tr.Item("Term")) = "goback" Then
             normals.Add tr
         ElseIf Left$(CStr(tr.Item("Term")), 6) = "abend:" Then
@@ -136,12 +163,25 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
         End If
     Next tr
 
-    Dim arms As Collection
-    Set arms = New Collection
-    CollectArms_ mNodes, arms
+    Dim specs As Collection
+    Set specs = SelectCases_(normals, abends, arms)
 
+    ' pass 2: re-walk each selected case with events recorded
     Dim cases As Collection
-    Set cases = SelectCases_(normals, abends, arms)
+    Set cases = New Collection
+    Dim sp As OrderedDict, w2 As OrderedDict
+    mRecordEvents = True
+    For Each sp In specs
+        If CStr(sp.Item("Kind")) = "synth" Then
+            mStopAtCall = CStr(sp.Item("SynthTarget"))
+        Else
+            mStopAtCall = ""
+        End If
+        Set w2 = WalkTo_(CStr(sp.Item("NeedTok")), CBool(sp.Item("PrefElse")), entry, secLabels)
+        cases.Add BuildCase_(w2, CStr(sp.Item("Id")), CStr(sp.Item("Kind")), CLng(sp.Item("KindSerial")))
+    Next sp
+    mStopAtCall = ""
+    mRecordEvents = False
 
     Dim result As OrderedDict
     Set result = New OrderedDict
@@ -169,6 +209,199 @@ Private Function MakeTermInfo_(ByVal nm As String, ByVal src As String) As Order
     t.Add "name", nm
     t.Add "source", src   ' "auto" (ABEND naming) / "manual" (control sheet)
     Set MakeTermInfo_ = t
+End Function
+
+'======================================================================
+' Directed path construction
+'======================================================================
+' One walk = one trace: branches on the way to the target arm are steered
+' (mNeed), all others take a default feasible arm. Returns the finished
+' trace tagged with the walk identity (NeedTok/PrefElse) so pass 2 can
+' reproduce it with events recorded.
+Private Function WalkTo_(ByVal token As String, ByVal prefElse As Boolean, _
+                         ByVal entry As OrderedDict, ByVal secLabels As OrderedDict) As OrderedDict
+    Set mNeed = New OrderedDict
+    If Len(token) > 0 Then
+        Dim v As Variant
+        For Each v In mArmCtx.Item(token)
+            mNeed.Add CStr(v), True
+        Next v
+        mNeed.Add token, True
+    End If
+    mPrefElse = prefElse
+    mMissed = False
+    mCurTok = token
+
+    Dim t0 As OrderedDict
+    Set t0 = NewTrace_()
+    AddEnterEvent_ t0, CStr(entry.Item("name")), secLabels, CLng(entry.Item("line"))
+    Dim seed As Collection, stack As Collection
+    Set seed = New Collection
+    seed.Add t0
+    Set stack = New Collection
+    stack.Add CStr(entry.Item("name"))
+    Dim outs As Collection
+    Set outs = ApplyRange_(CLng(entry.Item("line")), CLng(entry.Item("secEnd")), stack, seed, secLabels)
+
+    Dim res As OrderedDict
+    If outs.Count > 0 Then
+        Set res = outs(1)
+    Else
+        Set res = t0   ' walk died (no feasible arm) - Term stays "", dropped
+    End If
+    res.Add "NeedTok", token
+    res.Add "PrefElse", prefElse
+    If Len(token) > 0 And Not mMissed Then
+        If Not ArmOnTrace_(res, token) Then mMissed = True
+    End If
+    res.Add "Missed", mMissed
+    Set WalkTo_ = res
+End Function
+
+Private Function ArmOnTrace_(ByVal tr As OrderedDict, ByVal token As String) As Boolean
+    Dim cur As ConsList
+    Set cur = tr.Item("Arms")
+    ArmOnTrace_ = False
+    Do While Not cur Is Nothing
+        If CStr(cur.V) = token Then
+            ArmOnTrace_ = True
+            Exit Function
+        End If
+        Set cur = cur.Prev
+    Loop
+End Function
+
+' arm token -> chain of ancestor arm tokens required to reach it. One
+' depth-first walk over the inline expansion; each section is context-walked
+' once (the first reaching context wins), so the work stays linear.
+Private Sub BuildArmCtx_(ByVal entry As OrderedDict, ByVal secLabels As OrderedDict)
+    Set mArmCtx = New OrderedDict
+    Set mCtxVisited = New OrderedDict
+    Dim stack As Collection
+    Set stack = New Collection
+    stack.Add CStr(entry.Item("name"))
+    mCtxVisited.Add CStr(entry.Item("name")), True
+    CtxWalk_ RangeNodes_(CLng(entry.Item("line")), CLng(entry.Item("secEnd"))), stack, New Collection
+End Sub
+
+Private Sub CtxWalk_(ByVal list As Collection, ByVal stack As Collection, ByVal ctx As Collection)
+    Dim n As OrderedDict, t As String
+    For Each n In list
+        t = CStr(n.Item("type"))
+        If t = "if" Then
+            RegisterCtx_ CStr(n.Item("id")) & ":then", ctx
+            RegisterCtx_ CStr(n.Item("id")) & ":else", ctx
+            CtxWalk_ n.Item("thenChildren"), stack, CtxPlus_(ctx, CStr(n.Item("id")) & ":then")
+            CtxWalk_ n.Item("elseChildren"), stack, CtxPlus_(ctx, CStr(n.Item("id")) & ":else")
+        ElseIf t = "evaluate" Then
+            Dim cs As Collection, wi As Long, hasOther As Boolean
+            Set cs = n.Item("cases")
+            hasOther = False
+            For wi = 1 To cs.Count
+                RegisterCtx_ CStr(cs(wi).Item("id")), ctx
+                If CStr(cs(wi).Item("condition")) = "OTHER" Then hasOther = True
+                CtxWalk_ cs(wi).Item("children"), stack, CtxPlus_(ctx, CStr(cs(wi).Item("id")))
+            Next wi
+            If Not hasOther Then RegisterCtx_ CStr(n.Item("id")) & ":skip", ctx
+        ElseIf t = "search" Then
+            If Not IsNull(n.Item("atEndLine")) Then
+                RegisterCtx_ CStr(n.Item("id")) & ":atend", ctx
+                CtxWalk_ n.Item("atEndChildren"), stack, CtxPlus_(ctx, CStr(n.Item("id")) & ":atend")
+            Else
+                RegisterCtx_ CStr(n.Item("id")) & ":skip", ctx
+            End If
+            Dim sc As Collection, si As Long
+            Set sc = n.Item("cases")
+            For si = 1 To sc.Count
+                RegisterCtx_ CStr(sc(si).Item("id")), ctx
+                CtxWalk_ sc(si).Item("children"), stack, CtxPlus_(ctx, CStr(sc(si).Item("id")))
+            Next si
+        ElseIf t = "action" Then
+            CtxPerform_ CStr(n.Item("label")), stack, ctx
+        End If
+    Next n
+End Sub
+
+' inline-expand a plain PERFORM (or PERFORM..THRU) during the context walk
+Private Sub CtxPerform_(ByVal lbl As String, ByVal stack As Collection, ByVal ctx As Collection)
+    If Left$(lbl, 8) <> "PERFORM " Then Exit Sub
+    Dim rest As String, tgt As String, thru As String, p As Long
+    rest = Mid$(lbl, 9)
+    p = InStr(rest, " ")
+    If p = 0 Then
+        tgt = rest
+        thru = ""
+    Else
+        tgt = Left$(rest, p - 1)
+        Dim tail As String
+        tail = Mid$(rest, p + 1)
+        If Left$(tail, 5) = "THRU " Then
+            thru = Mid$(tail, 6)
+        ElseIf Left$(tail, 8) = "THROUGH " Then
+            thru = Mid$(tail, 9)
+        Else
+            Exit Sub   ' PERFORM ... UNTIL/VARYING: generic action, not inlined
+        End If
+        p = InStr(thru, " ")
+        If p > 0 Then thru = Left$(thru, p - 1)
+    End If
+    If mTermSecs.Exists(tgt) Then Exit Sub
+    If OnStack_(stack, tgt) Then Exit Sub
+    If mCtxVisited.Exists(tgt) Then Exit Sub
+    Dim ox As OrderedDict
+    Set ox = OwnerByName_(tgt)
+    If ox Is Nothing Then Exit Sub
+    mCtxVisited.Add tgt, True
+    Dim hi As Long
+    If CStr(ox.Item("kind")) = "section" Then hi = CLng(ox.Item("secEnd")) Else hi = CLng(ox.Item("ownerEnd"))
+    If Len(thru) > 0 Then
+        Dim oy As OrderedDict
+        Set oy = OwnerByName_(thru)
+        If Not oy Is Nothing Then
+            If CStr(oy.Item("kind")) = "section" Then hi = CLng(oy.Item("secEnd")) Else hi = CLng(oy.Item("ownerEnd"))
+        End If
+    End If
+    stack.Add tgt
+    CtxWalk_ RangeNodes_(CLng(ox.Item("line")), hi), stack, ctx
+    stack.Remove stack.Count
+End Sub
+
+Private Sub RegisterCtx_(ByVal token As String, ByVal ctx As Collection)
+    If mArmCtx.Exists(token) Then Exit Sub   ' first reaching context wins
+    Dim c As Collection, v As Variant
+    Set c = New Collection
+    For Each v In ctx
+        c.Add CStr(v)
+    Next v
+    mArmCtx.Add token, c
+End Sub
+
+Private Function CtxPlus_(ByVal ctx As Collection, ByVal token As String) As Collection
+    Dim c As Collection, v As Variant
+    Set c = New Collection
+    For Each v In ctx
+        c.Add CStr(v)
+    Next v
+    c.Add token
+    Set CtxPlus_ = c
+End Function
+
+' default-arm preference: avoid the arm that runs straight into an ABEND
+' terminator (top-level PERFORM of a registered/auto-detected terminator)
+Private Function BlockAbends_(ByVal list As Collection) As Boolean
+    Dim n As OrderedDict, lbl As String
+    BlockAbends_ = False
+    For Each n In list
+        If CStr(n.Item("type")) = "action" Then
+            lbl = CStr(n.Item("label"))
+            If Left$(lbl, 8) = "PERFORM " Then
+                If mTermSecs.Exists(Mid$(lbl, 9)) Then
+                    BlockAbends_ = True
+                    Exit Function
+                End If
+            End If
+        End If
+    Next n
 End Function
 
 '======================================================================
@@ -494,24 +727,9 @@ Private Function NewTrace_() As OrderedDict
     Set NewTrace_ = t
 End Function
 
-Private Function CloneTrace_(ByVal t As OrderedDict) As OrderedDict
-    Dim c As OrderedDict
-    Set c = New OrderedDict
-    c.Add "Arms", t.Item("Arms")     ' cons heads are immutable - share them
-    c.Add "Events", t.Item("Events")
-    c.Add "Calls", t.Item("Calls")
-    Dim env As OrderedDict, src As OrderedDict, ks As Collection, v As Variant
-    Set env = New OrderedDict
-    Set src = t.Item("Env")
-    Set ks = src.Keys
-    For Each v In ks
-        env.Add CStr(v), src.Item(CStr(v))
-    Next v
-    c.Add "Env", env
-    c.Add "Term", t.Item("Term")
-    c.Add "TriggerLine", t.Item("TriggerLine")
-    Set CloneTrace_ = c
-End Function
+' (CloneTrace_ removed: directed walks never fork, so traces are mutated in
+'  place and synthesized-failure prefixes are produced by a stop-at-call
+'  re-walk instead of snapshot cloning.)
 
 ' O(1) list append: new head referencing the previous one.
 Private Function Cons_(ByVal head As ConsList, ByVal item As Variant) As ConsList
@@ -565,6 +783,7 @@ Private Function ConsToList_(ByVal head As ConsList) As Collection
 End Function
 
 Private Sub AddEvent_(ByVal t As OrderedDict, ByVal kind As String, ByVal text As String, ByVal lineNo As Long)
+    If Not mRecordEvents Then Exit Sub   ' pass 1 needs arms/term only
     Dim e As OrderedDict
     Set e = New OrderedDict
     e.Add "Kind", kind
@@ -574,6 +793,7 @@ Private Sub AddEvent_(ByVal t As OrderedDict, ByVal kind As String, ByVal text A
 End Sub
 
 Private Sub AddEnterEvent_(ByVal t As OrderedDict, ByVal secName As String, ByVal secLabels As OrderedDict, ByVal lineNo As Long)
+    If Not mRecordEvents Then Exit Sub
     Dim e As OrderedDict
     Set e = New OrderedDict
     e.Add "Kind", "enter"
@@ -589,7 +809,8 @@ End Sub
 
 Private Sub AddArmEvent_(ByVal t As OrderedDict, ByVal token As String, ByVal armName As String, _
                          ByVal cond As String, ByVal lineNo As Long)
-    t.Add "Arms", Cons_(t.Item("Arms"), token)
+    t.Add "Arms", Cons_(t.Item("Arms"), token)   ' arms always (selection needs them)
+    If Not mRecordEvents Then Exit Sub
     Dim e As OrderedDict
     Set e = New OrderedDict
     e.Add "Kind", "arm"
@@ -603,6 +824,7 @@ End Sub
 
 Private Sub AddAssignEvent_(ByVal t As OrderedDict, ByVal dst As String, ByVal srcTxt As String, _
                             ByVal kind As String, ByVal lineNo As Long)
+    If Not mRecordEvents Then Exit Sub
     Dim e As OrderedDict
     Set e = New OrderedDict
     e.Add "Kind", "assign"
@@ -797,13 +1019,17 @@ End Sub
 '======================================================================
 Private Function ApplyRange_(ByVal lo As Long, ByVal hi As Long, ByVal stack As Collection, _
                              ByVal traces As Collection, ByVal secLabels As OrderedDict) As Collection
-    ' ranges repeat massively (every trace re-enters the same PERFORM targets):
-    ' resolve + scan once per unique range, then reuse the node list
+    Set ApplyRange_ = ApplyNodes_(RangeNodes_(lo, hi), stack, traces, secLabels)
+End Function
+
+' ranges repeat massively (every walk re-enters the same PERFORM targets):
+' resolve + scan once per unique range, then reuse the node list
+Private Function RangeNodes_(ByVal lo As Long, ByVal hi As Long) As Collection
     Dim key As String
     key = lo & "|" & hi
     If mRangeCache Is Nothing Then Set mRangeCache = New OrderedDict
     If Not mRangeCache.Exists(key) Then mRangeCache.Add key, NodesInRange_(lo, CapHi_(lo, hi))
-    Set ApplyRange_ = ApplyNodes_(mRangeCache.Item(key), stack, traces, secLabels)
+    Set RangeNodes_ = mRangeCache.Item(key)
 End Function
 
 Private Function ApplyNodes_(ByVal list As Collection, ByVal stack As Collection, _
@@ -839,24 +1065,56 @@ Private Function ApplyOne_(ByVal node As OrderedDict, ByVal stack As Collection,
         ElseIf t = "action" Then
             ApplyAction_ node, stack, tr, out, secLabels
         ElseIf t = "if" Then
+            ' directed: choose exactly one arm (required > default), no fork
             Dim okT As Boolean, okE As Boolean
             TestFeasible_ CStr(node.Item("condition")), tr.Item("Env"), okT, okE
-            Dim c1 As OrderedDict, subs As Collection, sb As OrderedDict, seed As Collection
-            If okT Then
-                Set c1 = CloneTrace_(tr)
-                AddArmEvent_ c1, CStr(node.Item("id")) & ":then", "THEN", CStr(node.Item("condition")), CLng(node.Item("startLine"))
+            Dim tkT As String, tkE As String, armSel As String
+            tkT = CStr(node.Item("id")) & ":then"
+            tkE = CStr(node.Item("id")) & ":else"
+            armSel = ""
+            If mNeed.Exists(tkT) Then
+                If okT Then
+                    armSel = "T"
+                Else
+                    mMissed = True
+                    If okE Then armSel = "E"
+                End If
+            ElseIf mNeed.Exists(tkE) Then
+                If okE Then
+                    armSel = "E"
+                Else
+                    mMissed = True
+                    If okT Then armSel = "T"
+                End If
+            Else
+                Dim prefT As Boolean
+                prefT = Not mPrefElse
+                If prefT Then
+                    If BlockAbends_(node.Item("thenChildren")) And Not BlockAbends_(node.Item("elseChildren")) Then prefT = False
+                Else
+                    If BlockAbends_(node.Item("elseChildren")) And Not BlockAbends_(node.Item("thenChildren")) Then prefT = True
+                End If
+                If prefT Then
+                    If okT Then armSel = "T" Else If okE Then armSel = "E"
+                Else
+                    If okE Then armSel = "E" Else If okT Then armSel = "T"
+                End If
+            End If
+            Dim subs As Collection, sb As OrderedDict, seed As Collection
+            If armSel = "T" Then
+                AddArmEvent_ tr, tkT, "THEN", CStr(node.Item("condition")), CLng(node.Item("startLine"))
                 Set seed = New Collection
-                seed.Add c1
+                seed.Add tr
                 Set subs = ApplyNodes_(node.Item("thenChildren"), stack, seed, secLabels)
                 For Each sb In subs: AddCapped_ out, sb: Next sb
-            End If
-            If okE Then
-                Set c1 = CloneTrace_(tr)
-                AddArmEvent_ c1, CStr(node.Item("id")) & ":else", "ELSE", CStr(node.Item("condition")), CLng(node.Item("startLine"))
+            ElseIf armSel = "E" Then
+                AddArmEvent_ tr, tkE, "ELSE", CStr(node.Item("condition")), CLng(node.Item("startLine"))
                 Set seed = New Collection
-                seed.Add c1
+                seed.Add tr
                 Set subs = ApplyNodes_(node.Item("elseChildren"), stack, seed, secLabels)
                 For Each sb In subs: AddCapped_ out, sb: Next sb
+            Else
+                mMissed = True   ' both arms infeasible - the walk dies here
             End If
         ElseIf t = "evaluate" Then
             ApplyEvaluate_ node, stack, tr, out, secLabels
@@ -947,13 +1205,24 @@ Private Sub ApplyAction_(ByVal node As OrderedDict, ByVal stack As Collection, B
         params = m.Item(0).SubMatches(2)
         tr.Add "Calls", Cons_(tr.Item("Calls"), tgt)
         AddEvent_ tr, "call", lbl, ln
-        ' remember the first call site for synthesized failure cases
+        ' pass 2 synthesized-failure walk: end the path right at this call
+        If Len(mStopAtCall) > 0 Then
+            If tgt = mStopAtCall Then
+                AddEvent_ tr, "term", "CALL " & tgt & " -> ABNORMAL (synthesized)", ln
+                tr.Add "Term", "synth:" & tgt
+                tr.Add "TriggerLine", ln
+                AddCapped_ out, tr
+                Exit Sub
+            End If
+        End If
+        ' remember the first call site (walk identity) for synthesized cases
         If Not mSynth.Exists(tgt) Then
             Dim sn As OrderedDict
             Set sn = New OrderedDict
-            sn.Add "Trace", CloneTrace_(tr)
             sn.Add "Line", ln
             sn.Add "Target", tgt
+            sn.Add "NeedTok", mCurTok
+            sn.Add "PrefElse", mPrefElse
             mSynth.Add tgt, sn
         End If
         If Len(params) > 0 Then
@@ -1147,69 +1416,135 @@ Private Sub ApplyEvaluate_(ByVal node As OrderedDict, ByVal stack As Collection,
         If CStr(cs(wi).Item("condition")) = "OTHER" Then hasOther = True
     Next wi
 
-    Dim c1 As OrderedDict, seed As Collection, subs As Collection, sb As OrderedDict
+    ' directed: pick exactly one arm. "allowed" reflects the env pruning the
+    ' forking version applied (known literal subject narrows the choices).
+    Dim needIdx As Long, needSkip As Boolean
+    needIdx = 0
+    needSkip = mNeed.Exists(CStr(node.Item("id")) & ":skip")
     For wi = 1 To cs.Count
-        Set w = cs(wi)
-        isOther = (CStr(w.Item("condition")) = "OTHER")
-        Dim takeIt As Boolean
-        takeIt = True
-        If litAll Then
-            If matchedIdx > 0 Then
-                takeIt = (wi = matchedIdx)
-            Else
-                takeIt = isOther   ' no literal matched: only OTHER (or skip)
-            End If
-        End If
-        If takeIt Then
-            Set c1 = CloneTrace_(tr)
-            AddArmEvent_ c1, CStr(w.Item("id")), "WHEN", expr & " = " & CStr(w.Item("condition")), CLng(w.Item("startLine"))
-            Set seed = New Collection
-            seed.Add c1
-            Set subs = ApplyNodes_(w.Item("children"), stack, seed, secLabels)
-            For Each sb In subs: AddCapped_ out, sb: Next sb
-        End If
+        If mNeed.Exists(CStr(cs(wi).Item("id"))) Then needIdx = wi
     Next wi
 
-    ' implicit skip arm when no WHEN OTHER exists
-    If Not hasOther Then
-        Dim skipIt As Boolean
-        skipIt = True
-        If litAll And matchedIdx > 0 Then skipIt = False
-        If skipIt Then
-            Set c1 = CloneTrace_(tr)
-            AddArmEvent_ c1, CStr(node.Item("id")) & ":skip", "SKIP", expr & " = (no match)", CLng(node.Item("startLine"))
-            AddCapped_ out, c1
+    Dim selIdx As Long, selSkip As Boolean
+    selIdx = 0
+    selSkip = False
+    If needIdx > 0 Then
+        If WhenAllowed_(needIdx, cs, litAll, matchedIdx) Then
+            selIdx = needIdx
+        Else
+            mMissed = True
         End If
+    ElseIf needSkip Then
+        If hasOther Or (litAll And matchedIdx > 0) Then
+            mMissed = True
+        Else
+            selSkip = True
+        End If
+    End If
+    If selIdx = 0 And Not selSkip Then
+        ' default choice
+        If litAll Then
+            If matchedIdx > 0 Then
+                selIdx = matchedIdx
+            ElseIf hasOther Then
+                For wi = 1 To cs.Count
+                    If CStr(cs(wi).Item("condition")) = "OTHER" Then selIdx = wi
+                Next wi
+            Else
+                selSkip = True
+            End If
+        Else
+            If mPrefElse Then
+                If hasOther Then
+                    For wi = 1 To cs.Count
+                        If CStr(cs(wi).Item("condition")) = "OTHER" Then selIdx = wi
+                    Next wi
+                ElseIf cs.Count > 0 Then
+                    selIdx = cs.Count
+                Else
+                    selSkip = True
+                End If
+            Else
+                If cs.Count > 0 Then selIdx = 1 Else selSkip = True
+            End If
+        End If
+    End If
+
+    Dim seed As Collection, subs As Collection, sb As OrderedDict
+    If selIdx > 0 Then
+        Set w = cs(selIdx)
+        AddArmEvent_ tr, CStr(w.Item("id")), "WHEN", expr & " = " & CStr(w.Item("condition")), CLng(w.Item("startLine"))
+        Set seed = New Collection
+        seed.Add tr
+        Set subs = ApplyNodes_(w.Item("children"), stack, seed, secLabels)
+        For Each sb In subs: AddCapped_ out, sb: Next sb
+    ElseIf selSkip And Not hasOther Then
+        AddArmEvent_ tr, CStr(node.Item("id")) & ":skip", "SKIP", expr & " = (no match)", CLng(node.Item("startLine"))
+        AddCapped_ out, tr
+    Else
+        mMissed = True
     End If
 End Sub
 
+Private Function WhenAllowed_(ByVal wi As Long, ByVal cs As Collection, _
+                              ByVal litAll As Boolean, ByVal matchedIdx As Long) As Boolean
+    If Not litAll Then
+        WhenAllowed_ = True
+    ElseIf matchedIdx > 0 Then
+        WhenAllowed_ = (wi = matchedIdx)
+    Else
+        WhenAllowed_ = (CStr(cs(wi).Item("condition")) = "OTHER")
+    End If
+End Function
+
 Private Sub ApplySearch_(ByVal node As OrderedDict, ByVal stack As Collection, ByVal tr As OrderedDict, _
                          ByVal out As Collection, ByVal secLabels As OrderedDict)
-    Dim c1 As OrderedDict, seed As Collection, subs As Collection, sb As OrderedDict
-    ' AT END arm (or implicit skip when absent)
-    Set c1 = CloneTrace_(tr)
-    If Not IsNull(node.Item("atEndLine")) Then
-        AddArmEvent_ c1, CStr(node.Item("id")) & ":atend", "AT END", "SEARCH " & CStr(node.Item("tableExpr")), CLng(node.Item("startLine"))
+    ' directed: exactly one arm - a required WHEN / AT END, else default
+    ' (default = first WHEN i.e. "found"; ELSE-pref seeds take AT END/skip)
+    Dim cs As Collection, wi As Long, w As OrderedDict
+    Set cs = node.Item("cases")
+    Dim hasAtEnd As Boolean
+    hasAtEnd = Not IsNull(node.Item("atEndLine"))
+
+    Dim needIdx As Long, needAtEnd As Boolean, needSkip As Boolean
+    needIdx = 0
+    needAtEnd = mNeed.Exists(CStr(node.Item("id")) & ":atend")
+    needSkip = mNeed.Exists(CStr(node.Item("id")) & ":skip")
+    For wi = 1 To cs.Count
+        If mNeed.Exists(CStr(cs(wi).Item("id"))) Then needIdx = wi
+    Next wi
+
+    Dim selIdx As Long, selEnd As Boolean
+    selIdx = 0
+    selEnd = False
+    If needIdx > 0 Then
+        selIdx = needIdx
+    ElseIf needAtEnd Or needSkip Then
+        selEnd = True
+    ElseIf mPrefElse Or cs.Count = 0 Then
+        selEnd = True
+    Else
+        selIdx = 1
+    End If
+
+    Dim seed As Collection, subs As Collection, sb As OrderedDict
+    If selIdx > 0 Then
+        Set w = cs(selIdx)
+        AddArmEvent_ tr, CStr(w.Item("id")), "WHEN", CStr(w.Item("condition")), CLng(w.Item("startLine"))
         Set seed = New Collection
-        seed.Add c1
+        seed.Add tr
+        Set subs = ApplyNodes_(w.Item("children"), stack, seed, secLabels)
+        For Each sb In subs: AddCapped_ out, sb: Next sb
+    ElseIf hasAtEnd Then
+        AddArmEvent_ tr, CStr(node.Item("id")) & ":atend", "AT END", "SEARCH " & CStr(node.Item("tableExpr")), CLng(node.Item("startLine"))
+        Set seed = New Collection
+        seed.Add tr
         Set subs = ApplyNodes_(node.Item("atEndChildren"), stack, seed, secLabels)
         For Each sb In subs: AddCapped_ out, sb: Next sb
     Else
-        AddArmEvent_ c1, CStr(node.Item("id")) & ":skip", "AT END(skip)", "SEARCH " & CStr(node.Item("tableExpr")), CLng(node.Item("startLine"))
-        AddCapped_ out, c1
+        AddArmEvent_ tr, CStr(node.Item("id")) & ":skip", "AT END(skip)", "SEARCH " & CStr(node.Item("tableExpr")), CLng(node.Item("startLine"))
+        AddCapped_ out, tr
     End If
-    ' WHEN arms
-    Dim cs As Collection, wi As Long, w As OrderedDict
-    Set cs = node.Item("cases")
-    For wi = 1 To cs.Count
-        Set w = cs(wi)
-        Set c1 = CloneTrace_(tr)
-        AddArmEvent_ c1, CStr(w.Item("id")), "WHEN", CStr(w.Item("condition")), CLng(w.Item("startLine"))
-        Set seed = New Collection
-        seed.Add c1
-        Set subs = ApplyNodes_(w.Item("children"), stack, seed, secLabels)
-        For Each sb In subs: AddCapped_ out, sb: Next sb
-    Next wi
 End Sub
 
 '======================================================================
@@ -1340,57 +1675,68 @@ Private Function SelectCases_(ByVal normals As Collection, ByVal abends As Colle
         End If
     Next tr
 
-    ' synthesized call-failure stubs
+    ' synthesized call-failure specs (re-walked with stop-at-call in pass 2)
     Dim synths As Collection
     Set synths = New Collection
-    Dim sk As Collection, sv As Variant, sn As OrderedDict, st As OrderedDict
+    Dim sk As Collection, sv As Variant, sn As OrderedDict
     Set sk = mSynth.Keys
     For Each sv In sk
         Set sn = mSynth.Item(CStr(sv))
-        Set st = sn.Item("Trace")
-        st.Add "Term", "synth:" & CStr(sn.Item("Target"))
-        st.Add "TriggerLine", CLng(sn.Item("Line"))
-        AddEvent_ st, "term", "CALL " & CStr(sn.Item("Target")) & " -> ABNORMAL (synthesized)", CLng(sn.Item("Line"))
-        synths.Add st
+        Dim ss As OrderedDict
+        Set ss = New OrderedDict
+        ss.Add "Kind", "synth"
+        ss.Add "NeedTok", CStr(sn.Item("NeedTok"))
+        ss.Add "PrefElse", CBool(sn.Item("PrefElse"))
+        ss.Add "SynthTarget", CStr(sn.Item("Target"))
+        ss.Add "TriggerLine", CLng(sn.Item("Line"))
+        synths.Add ss
     Next sv
 
-    ' abnormal = code abends + synths, ordered by trigger line
+    ' abnormal = code-abend specs + synth specs, ordered by trigger line
     Dim abnormal As Collection
     Set abnormal = New Collection
     Dim gk As Collection, gv As Variant
     Set gk = groups.Keys
     For Each gv In gk
         Set tr = groups.Item(CStr(gv))
-        If CLng(tr.Item("TriggerLine")) = 0 Then
-            ' trigger = line of the terminating event (= the cons head)
-            Dim eh As ConsList
-            Set eh = tr.Item("Events")
-            If Not eh Is Nothing Then tr.Add "TriggerLine", CLng(eh.V.Item("Line"))
-        End If
-        abnormal.Add tr
+        Dim ab As OrderedDict
+        Set ab = New OrderedDict
+        ab.Add "Kind", "abend"
+        ab.Add "NeedTok", CStr(tr.Item("NeedTok"))
+        ab.Add "PrefElse", CBool(tr.Item("PrefElse"))
+        ab.Add "SynthTarget", ""
+        ab.Add "TriggerLine", CLng(tr.Item("TriggerLine"))
+        abnormal.Add ab
     Next gv
-    For Each tr In synths
-        abnormal.Add tr
-    Next tr
+    Dim sy As OrderedDict
+    For Each sy In synths
+        abnormal.Add sy
+    Next sy
     Set abnormal = SortByTrigger_(abnormal)
 
-    ' assemble case records
+    ' assemble pass-2 specs (cases are re-walked with events recorded)
     Dim serial As Long, normSerial As Long, abSerial As Long
     serial = 0
+    Dim sp As OrderedDict
     For Each tr In picked
         serial = serial + 1
         normSerial = normSerial + 1
-        cases.Add BuildCase_(tr, "TC" & serial, "normal", normSerial)
+        Set sp = New OrderedDict
+        sp.Add "Kind", "normal"
+        sp.Add "Id", "TC" & serial
+        sp.Add "KindSerial", normSerial
+        sp.Add "NeedTok", CStr(tr.Item("NeedTok"))
+        sp.Add "PrefElse", CBool(tr.Item("PrefElse"))
+        sp.Add "SynthTarget", ""
+        cases.Add sp
     Next tr
-    For Each tr In abnormal
+    For Each sp In abnormal
         serial = serial + 1
         abSerial = abSerial + 1
-        If Left$(CStr(tr.Item("Term")), 6) = "synth:" Then
-            cases.Add BuildCase_(tr, "TC" & serial, "synth", abSerial)
-        Else
-            cases.Add BuildCase_(tr, "TC" & serial, "abend", abSerial)
-        End If
-    Next tr
+        sp.Add "Id", "TC" & serial          ' OrderedDict.Add updates if present
+        sp.Add "KindSerial", abSerial
+        cases.Add sp
+    Next sp
 
     Set SelectCases_ = cases
 End Function

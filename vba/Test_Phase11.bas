@@ -59,7 +59,8 @@ Public Sub Test_Flow_ICASE3()
     Set flow = CobolFlow.Analyze_Flow(src, terms)
 
     TestRunner.Assert_Equal CLng(14), CLng(flow.Item("arms").Count), "ICASE3 arms = 14"
-    TestRunner.Assert_Equal CLng(6), CLng(flow.Item("normalPaths")), "feasible normal paths = 6 (pruned from 12)"
+    ' directed construction: candidates = 2 seeds + per-arm walks (ver4 oracle)
+    TestRunner.Assert_Equal CLng(12), CLng(flow.Item("normalPaths")), "normal candidate walks = 12"
     TestRunner.Assert_True Not CBool(flow.Item("truncated")), "not truncated"
 
     Dim cases As Collection
