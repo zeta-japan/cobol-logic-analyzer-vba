@@ -88,7 +88,13 @@ Private Function RenderCaseBlock_(ByVal ws As Worksheet, ByVal c As OrderedDict,
     Dim stepN As Long, stepsCapped As Boolean
     For Each e In c.Item("events")
         k = CStr(e.Item("Kind"))
-        stepN = stepN + 1
+        ' count only events that render a row (cap = visible rows)
+        Select Case k
+            Case "enter", "exec", "call", "arm", "term"
+                stepN = stepN + 1
+            Case "assign"
+                If CBool(e.Item("IsKey")) Then stepN = stepN + 1
+        End Select
         If stepN > MAX_CASE_STEPS And k <> "term" Then
             If Not stepsCapped Then
                 ws.Cells(row, 1).Value = "　…（以降の途中ステップは省略・終了行のみ表示）"

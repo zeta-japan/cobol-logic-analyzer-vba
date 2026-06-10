@@ -158,6 +158,8 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
         result.Add "entryName", CStr(entry.Item("name"))
     End If
     UnlinkCons_   ' cases hold materialized Collections by now
+    Set mOwnerIdx = Nothing    ' per-run caches must not outlive the run
+    Set mRangeCache = Nothing
     Set Analyze_Flow = result
 End Function
 
@@ -818,9 +820,11 @@ Private Function ApplyOne_(ByVal node As OrderedDict, ByVal stack As Collection,
                            ByVal traces As Collection, ByVal secLabels As OrderedDict) As Collection
     mOps = mOps + 1
     If (mOps And 2047) = 0 Then
-        ' visible progress so a long run is distinguishable from a hang
+        ' visible progress so a long run is distinguishable from a hang.
+        ' only during the real pipeline - direct calls (tests) must not
+        ' leave a stale status bar behind.
         On Error Resume Next
-        Application.StatusBar = Main.STATUS_FLOW & "  (" & mOps & ")"
+        If Main.AnalysisBusy() Then Application.StatusBar = Main.STATUS_FLOW & "  (" & mOps & ")"
         On Error GoTo 0
         DoEvents   ' stay responsive on big programs
     End If
