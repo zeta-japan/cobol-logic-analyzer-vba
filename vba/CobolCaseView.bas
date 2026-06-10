@@ -9,6 +9,9 @@ Attribute VB_Name = "CobolCaseView"
 
 Option Explicit
 
+' per-case render guard: a 1000+ line path carries thousands of step rows
+Private Const MAX_CASE_STEPS As Long = 400
+
 Private Const SHEET_CASES As String = "テストケース候補"
 Private Const SHEET_MATRIX As String = "分岐カバレッジ表"
 
@@ -82,8 +85,19 @@ Private Function RenderCaseBlock_(ByVal ws As Worksheet, ByVal c As OrderedDict,
     End If
 
     Dim e As OrderedDict, k As String, txt As String
+    Dim stepN As Long, stepsCapped As Boolean
     For Each e In c.Item("events")
         k = CStr(e.Item("Kind"))
+        stepN = stepN + 1
+        If stepN > MAX_CASE_STEPS And k <> "term" Then
+            If Not stepsCapped Then
+                ws.Cells(row, 1).Value = "　…（以降の途中ステップは省略・終了行のみ表示）"
+                ws.Cells(row, 1).Font.Color = RGB(120, 120, 120)
+                row = row + 1
+                stepsCapped = True
+            End If
+            GoTo NextEv
+        End If
         txt = ""
         Select Case k
             Case "enter"
@@ -112,6 +126,7 @@ Private Function RenderCaseBlock_(ByVal ws As Worksheet, ByVal c As OrderedDict,
                 ws.Cells(row, 1).Font.Bold = True
                 row = row + 1
         End Select
+NextEv:
     Next e
 
     ' synthesized cases carry no term event of their own when built from a

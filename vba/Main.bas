@@ -14,6 +14,9 @@ Option Explicit
 ' state. TC nav buttons check it too (via AnalysisBusy).
 Private mBusy As Boolean
 
+' stage-3 status text (CobolFlow appends a live counter to it)
+Public Const STATUS_FLOW As String = "解析中 (3/4): テストケース生成..."
+
 Public Function AnalysisBusy() As Boolean
     AnalysisBusy = mBusy
 End Function
@@ -268,7 +271,7 @@ Public Sub AnalyzeAndBuild(ByVal cblPath As String)
     CobolLogicViewer.BuildCobolReport jsonPath, False
 
     ' ver3.0: execution-flow case generation -> tree marking + case sheets
-    Application.StatusBar = "解析中 (3/4): テストケース生成..."
+    Application.StatusBar = STATUS_FLOW
     Dim flowR As OrderedDict, flowErr As String
     flowErr = ""
     On Error Resume Next

@@ -30,6 +30,11 @@ Private mOps As Long   ' heartbeat counter: keep Excel responsive on big program
 ' because letting VB tear down a long Prev chain recursively can blow the
 ' native stack (classic linked-list teardown crash, untrappable in VBA)
 Private mConsReg As Collection
+' PerformInto_ runs per trace per PERFORM: cache the node list per range and
+' index owners by name, or big programs rescan the whole node table millions
+' of times (the stage-3 hot spot on 1000+ line sources)
+Private mRangeCache As OrderedDict
+Private mOwnerIdx As OrderedDict
 
 Private mNodes As Collection      ' AST root nodes
 Private mOwners As Collection     ' {name,line,kind,ownerEnd,secEnd} sorted
@@ -77,8 +82,11 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
     For Each v In tk
         termsApplied.Add MakeTermInfo_(CStr(v), "manual")
     Next v
+    Set mOwnerIdx = New OrderedDict
+    Set mRangeCache = New OrderedDict
     Dim ow As OrderedDict
     For Each ow In mOwners
+        If Not mOwnerIdx.Exists(CStr(ow.Item("name"))) Then mOwnerIdx.Add CStr(ow.Item("name")), ow
         If CStr(ow.Item("kind")) = "section" And InStr(CStr(ow.Item("name")), "ABEND") > 0 Then
             If Not mTermSecs.Exists(CStr(ow.Item("name"))) Then
                 mTermSecs.Add CStr(ow.Item("name")), True
@@ -423,6 +431,15 @@ Private Function IsDataSection_(ByVal nm As String) As Boolean
 End Function
 
 Private Function OwnerByName_(ByVal nm As String) As OrderedDict
+    ' indexed lookup - this is called per trace per PERFORM
+    If Not mOwnerIdx Is Nothing Then
+        If mOwnerIdx.Exists(nm) Then
+            Set OwnerByName_ = mOwnerIdx.Item(nm)
+        Else
+            Set OwnerByName_ = Nothing
+        End If
+        Exit Function
+    End If
     Dim o As OrderedDict
     For Each o In mOwners
         If CStr(o.Item("name")) = nm Then
@@ -778,7 +795,13 @@ End Sub
 '======================================================================
 Private Function ApplyRange_(ByVal lo As Long, ByVal hi As Long, ByVal stack As Collection, _
                              ByVal traces As Collection, ByVal secLabels As OrderedDict) As Collection
-    Set ApplyRange_ = ApplyNodes_(NodesInRange_(lo, CapHi_(lo, hi)), stack, traces, secLabels)
+    ' ranges repeat massively (every trace re-enters the same PERFORM targets):
+    ' resolve + scan once per unique range, then reuse the node list
+    Dim key As String
+    key = lo & "|" & hi
+    If mRangeCache Is Nothing Then Set mRangeCache = New OrderedDict
+    If Not mRangeCache.Exists(key) Then mRangeCache.Add key, NodesInRange_(lo, CapHi_(lo, hi))
+    Set ApplyRange_ = ApplyNodes_(mRangeCache.Item(key), stack, traces, secLabels)
 End Function
 
 Private Function ApplyNodes_(ByVal list As Collection, ByVal stack As Collection, _
@@ -794,7 +817,13 @@ End Function
 Private Function ApplyOne_(ByVal node As OrderedDict, ByVal stack As Collection, _
                            ByVal traces As Collection, ByVal secLabels As OrderedDict) As Collection
     mOps = mOps + 1
-    If (mOps And 2047) = 0 Then DoEvents   ' stay responsive on big programs
+    If (mOps And 2047) = 0 Then
+        ' visible progress so a long run is distinguishable from a hang
+        On Error Resume Next
+        Application.StatusBar = Main.STATUS_FLOW & "  (" & mOps & ")"
+        On Error GoTo 0
+        DoEvents   ' stay responsive on big programs
+    End If
     Dim out As Collection
     Set out = New Collection
     Dim tr As OrderedDict, t As String
@@ -872,21 +901,41 @@ Private Sub ApplyAction_(ByVal node As OrderedDict, ByVal stack As Collection, B
         Exit Sub
     End If
 
-    ' PERFORM x THRU y
-    Set m = rxThru.Execute(lbl)
-    If m.Count > 0 Then
-        PerformInto_ m.Item(0).SubMatches(0), m.Item(0).SubMatches(2), node, stack, tr, out, secLabels
-        Exit Sub
-    End If
+    ' fast dispatch on the first token: this sub runs per trace per action,
+    ' and running every regex against every label dominated big-program
+    ' runtime. Only the verbs below need the regex machinery.
+    Dim v1 As String
+    v1 = Left$(lbl & " ", InStr(lbl & " ", " "))
+    Select Case v1
+        Case "PERFORM ", "CALL ", "MOVE ", "COMPUTE ", "STRING ", "INITIALIZE ", "ACCEPT "
+            ' fall through to the verb handlers below
+        Case Else
+            If Left$(lbl, 5) = "EXEC " Then
+                AddEvent_ tr, "exec", lbl, ln
+            Else
+                AddEvent_ tr, "action", lbl, ln
+            End If
+            AddCapped_ out, tr
+            Exit Sub
+    End Select
 
-    ' PERFORM x
-    Set m = rxPerf.Execute(lbl)
-    If m.Count > 0 Then
-        PerformInto_ m.Item(0).SubMatches(0), "", node, stack, tr, out, secLabels
-        Exit Sub
+    If v1 = "PERFORM " Then
+        ' PERFORM x THRU y
+        Set m = rxThru.Execute(lbl)
+        If m.Count > 0 Then
+            PerformInto_ m.Item(0).SubMatches(0), m.Item(0).SubMatches(2), node, stack, tr, out, secLabels
+            Exit Sub
+        End If
+        ' PERFORM x
+        Set m = rxPerf.Execute(lbl)
+        If m.Count > 0 Then
+            PerformInto_ m.Item(0).SubMatches(0), "", node, stack, tr, out, secLabels
+            Exit Sub
+        End If
     End If
 
     ' CALL
+    If v1 = "CALL " Then
     Set m = rxCall.Execute(lbl)
     If m.Count > 0 Then
         Dim tgt As String, params As String
@@ -913,6 +962,7 @@ Private Sub ApplyAction_(ByVal node As OrderedDict, ByVal stack As Collection, B
         AddCapped_ out, tr
         Exit Sub
     End If
+    End If   ' v1 = "CALL "
 
     ' MOVE - supports multi-target form (MOVE v TO A B C). A quoted-literal
     ' source is matched first so literals containing " TO " keep working.
