@@ -87,6 +87,15 @@ Public Function BuildDriverLines(ByVal flow As OrderedDict, ByVal cblPath As Str
         Else
             Emit_ out, "      *    （設定が必要な LINKAGE 入力はありません）", "code"
         End If
+        ' echo the inputs that were just set, right before the CALL,
+        ' so the test log shows input and result side by side (LINKAGE
+        ' items only - DB/sub prerequisites are environment, not variables)
+        If cm.Item("lkIn").Count > 0 Then
+            Emit_ out, "           DISPLAY '==== " & CStr(cm.Item("id")) & " INPUT ===='", "code"
+            For Each r In cm.Item("lkIn")
+                Emit_ out, "           DISPLAY '" & CStr(cm.Item("id")) & " " & CStr(r.Item("Item")) & " = ' " & CStr(r.Item("Item")), "code"
+            Next r
+        End If
         If usingParams.Count > 0 Then
             Emit_ out, "           CALL '" & progName & "' USING " & JoinSp_(usingParams), "code"
         Else
