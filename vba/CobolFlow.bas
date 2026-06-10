@@ -231,6 +231,27 @@ Private Function WalkTo_(ByVal token As String, ByVal prefElse As Boolean, _
                          ByVal entry As OrderedDict, ByVal secLabels As OrderedDict) As OrderedDict
     Dim res As OrderedDict
     Set res = TryWalk_(token, prefElse, entry, secLabels, Nothing)
+
+    ' synth (stop-at-call) re-walks have a different success criterion: the
+    ' walk must STOP AT THE CALL - the target arm being absent past the
+    ' truncation point is expected, so "Missed" must not trigger the value
+    ' retry on its own. If the first try did not reach the call (the synth
+    ' site was registered on a retry path in pass 1), retry once with the
+    ' steer chain and accept only a properly truncated result.
+    If Len(mStopAtCall) > 0 Then
+        If Left$(CStr(res.Item("Term")), 6) <> "synth:" And Len(token) > 0 Then
+            Dim extraS As Collection
+            Set extraS = SteerChain_(token)
+            If Not extraS Is Nothing Then
+                Dim resS As OrderedDict
+                Set resS = TryWalk_(token, prefElse, entry, secLabels, extraS)
+                If Left$(CStr(resS.Item("Term")), 6) = "synth:" Then Set res = resS
+            End If
+        End If
+        Set WalkTo_ = res
+        Exit Function
+    End If
+
     ' value-driven retry (once): steer the branch chain of a literal MOVE
     ' that satisfies the target arm's tested value (flag idiom)
     If CBool(res.Item("Missed")) And Len(token) > 0 Then
@@ -482,6 +503,7 @@ Private Function ParsePerform_(ByVal lbl As String, ByRef tgt As String, ByRef t
         Exit Function
     End If
     tgt = Left$(rest, p - 1)
+    If tgt Like "*[!A-Z0-9-]*" Then Exit Function   ' not a procedure name
     tail = Mid$(rest, p + 1)
     If Left$(tail, 5) = "THRU " Then
         thru = Mid$(tail, 6)
@@ -508,14 +530,24 @@ Private Function IsLoopTail_(ByVal tail As String) As Boolean
         IsLoopTail_ = True
         Exit Function
     End If
-    If tail = "TIMES" Then
-        IsLoopTail_ = True
+    ' COBOL85 WITH TEST BEFORE/AFTER prefix wraps a loop tail
+    If Left$(tail, 17) = "WITH TEST BEFORE " Then
+        IsLoopTail_ = IsLoopTail_(Mid$(tail, 18))
         Exit Function
     End If
-    Dim p As Long
+    If Left$(tail, 16) = "WITH TEST AFTER " Then
+        IsLoopTail_ = IsLoopTail_(Mid$(tail, 17))
+        Exit Function
+    End If
+    ' "<digits> TIMES" exactly. A bare "TIMES" tail means the token BEFORE
+    ' it was the repeat count (inline count form) - not inlinable.
+    Dim p As Long, cnt As String
     p = InStr(tail, " ")
     If p > 0 Then
-        If Mid$(tail, p + 1, 5) = "TIMES" And IsNumeric(Left$(tail, p - 1)) Then IsLoopTail_ = True
+        cnt = Left$(tail, p - 1)
+        If Mid$(tail, p + 1) = "TIMES" And Len(cnt) > 0 Then
+            If Not cnt Like "*[!0-9]*" Then IsLoopTail_ = True
+        End If
     End If
 End Function
 
@@ -646,19 +678,15 @@ Private Sub BuildCut_()
 End Sub
 
 Private Sub CollectPerformTargets_(ByVal nodes As Collection)
-    Static rxP As Object
-    If rxP Is Nothing Then
-        Set rxP = CreateObject("VBScript.RegExp")
-        rxP.Pattern = "^PERFORM\s+([A-Z0-9][A-Z0-9-]*)$"
-        rxP.IgnoreCase = False
-    End If
-    Dim n As OrderedDict, t As String, m As Object
+    Dim n As OrderedDict, t As String
+    Dim tgt As String, thru As String
     For Each n In nodes
         t = CStr(n.Item("type"))
         If t = "action" Then
-            Set m = rxP.Execute(CStr(n.Item("label")))
-            If m.Count > 0 Then
-                If Not mCut.Exists(m.Item(0).SubMatches(0)) Then mCut.Add m.Item(0).SubMatches(0), True
+            ' all inlinable forms (plain / THRU / loop) cut the fall-through
+            ' range, or the body would run twice on the same trace
+            If ParsePerform_(CStr(n.Item("label")), tgt, thru) Then
+                If Not mCut.Exists(tgt) Then mCut.Add tgt, True
             End If
         ElseIf t = "if" Then
             CollectPerformTargets_ n.Item("thenChildren")

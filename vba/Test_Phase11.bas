@@ -78,6 +78,10 @@ Public Sub Test_Flow_LoopAndFlag()
     TestRunner.Assert_Equal CLng(0), uncov, _
         "loop bodies inlined + flag idiom steered: every arm covered"
     TestRunner.Assert_Equal CLng(2), CLng(flow.Item("cases").Count), "loop+flag: 2 cases"
+    ' steering-sensitive pin: the final-IF else walk only survives via the
+    ' value-driven retry (8 = 2 seeds + 6 arm walks, none dropped)
+    TestRunner.Assert_Equal CLng(8), CLng(flow.Item("normalPaths")), _
+        "value steering keeps all 8 candidate walks alive"
 End Sub
 
 ' Regression: real sources are full of COPY ... PREFIXING lines, whose data
