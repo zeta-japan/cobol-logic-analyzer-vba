@@ -17,6 +17,122 @@ Public Sub Run_All()
     TestRunner.Run_One "Test_Flow_ReadAheadEval"
     TestRunner.Run_One "Test_Flow_ArithAndGoto"
     TestRunner.Run_One "Test_Flow_CallArgUnset"
+    TestRunner.Run_One "Test_Flow_BlockerSteer"
+    TestRunner.Run_One "Test_Flow_BlockerSteerEval"
+End Sub
+
+' the production shape behind the ????? red rows: a compound-cond
+' IF nested under EVALUATE WHEN 'D', flag initialized to space, only
+' setter a GATED group MOVE. Fallback walks for the inner arms conflict
+' AT the EVALUATE (mMissTok = when-D id), the target has no steer of its
+' own, so coverage needs the blocker-keyed retry + descendant unset.
+' The oracle has no EVALUATE parser - pins derived by hand: arms = 7
+' (eof-if 2, WHENs 3, inner-if 2), all covered.
+Public Sub Test_Flow_BlockerSteerEval()
+    Dim s As String
+    s = ""
+    s = s & "       WORKING-STORAGE SECTION." & vbLf
+    s = s & "       01  FD-REC  PIC X(02)." & vbLf
+    s = s & "       01  W-WK." & vbLf
+    s = s & "           03  F-MAS1  PIC X(01)." & vbLf
+    s = s & "           03  F-OTH   PIC X(01)." & vbLf
+    s = s & "       01  DT1     PIC 9(03)." & vbLf
+    s = s & "       01  DT2     PIC 9(03)." & vbLf
+    s = s & "       01  W-OUT   PIC X(02)." & vbLf
+    s = s & "       01  W-EOF   PIC X(01)." & vbLf
+    s = s & "       PROCEDURE DIVISION." & vbLf
+    s = s & "       MAIN-PROC SECTION." & vbLf
+    s = s & "       MAIN-000." & vbLf
+    s = s & "           MOVE ' ' TO F-MAS1." & vbLf
+    s = s & "           IF W-EOF = '1'" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               CONTINUE" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               PERFORM READ-SEC" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "           EVALUATE F-MAS1" & vbLf
+    s = s & "               WHEN ' '" & vbLf
+    s = s & "                   CONTINUE" & vbLf
+    s = s & "               WHEN 'D'" & vbLf
+    s = s & "                   IF DT1 NOT = 0 AND DT2 NOT = 0" & vbLf
+    s = s & "                   THEN" & vbLf
+    s = s & "                       MOVE 'AA' TO W-OUT" & vbLf
+    s = s & "                   ELSE" & vbLf
+    s = s & "                       MOVE 'BB' TO W-OUT" & vbLf
+    s = s & "                   END-IF" & vbLf
+    s = s & "               WHEN OTHER" & vbLf
+    s = s & "                   MOVE 'ZZ' TO W-OUT" & vbLf
+    s = s & "           END-EVALUATE." & vbLf
+    s = s & "           GOBACK." & vbLf
+    s = s & "       READ-SEC SECTION." & vbLf
+    s = s & "       READS-000." & vbLf
+    s = s & "           MOVE FD-REC TO W-WK." & vbLf
+    s = s & "       READS-999." & vbLf
+    s = s & "           EXIT." & vbLf
+
+    Dim flow As OrderedDict
+    Set flow = CobolFlow.Analyze_Flow(s, New Collection)
+    TestRunner.Assert_Equal CLng(7), CLng(flow.Item("arms").Count), "eval blocker-steer: 7 arms"
+    TestRunner.Assert_Equal CLng(0), CLng(UncovCount_(flow)), _
+        "compound-cond arms under a blocked WHEN: all covered"
+End Sub
+
+' blocker-keyed retry + group-MOVE descendant unset: the target arm has a
+' COMPOUND condition (no steer info of its own); the conflict happens at
+' the ANCESTOR IF on F-MAS1, whose setter is a GROUP move GATED behind a
+' sibling branch (so the propagated constant survives attempt 1 - without
+' the gate the unconditional Invalidate_ would mask the retry machinery),
+' i.e. MOVE FD-REC TO
+' W-WK with F-MAS1 inside W-WK). The retry must key on the blocking arm
+' and havoc F-MAS1 via the descendant-expanded unset site.
+' ver4 oracle (BIGCASE7): 6 arms, all covered, 4 normal paths, 3 cases.
+Public Sub Test_Flow_BlockerSteer()
+    Dim s As String
+    s = ""
+    s = s & "       WORKING-STORAGE SECTION." & vbLf
+    s = s & "       01  FD-REC  PIC X(02)." & vbLf
+    s = s & "       01  W-WK." & vbLf
+    s = s & "           03  F-MAS1  PIC X(01)." & vbLf
+    s = s & "           03  F-OTH   PIC X(01)." & vbLf
+    s = s & "       01  DT1     PIC 9(03)." & vbLf
+    s = s & "       01  DT2     PIC 9(03)." & vbLf
+    s = s & "       01  W-OUT   PIC X(02)." & vbLf
+    s = s & "       01  W-EOF   PIC X(01)." & vbLf
+    s = s & "       PROCEDURE DIVISION." & vbLf
+    s = s & "       MAIN-PROC SECTION." & vbLf
+    s = s & "       MAIN-000." & vbLf
+    s = s & "           MOVE ' ' TO F-MAS1." & vbLf
+    s = s & "           IF W-EOF = '1'" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               CONTINUE" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               PERFORM READ-SEC" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "           IF F-MAS1 = 'D'" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               IF DT1 NOT = 0 AND DT2 NOT = 0" & vbLf
+    s = s & "               THEN" & vbLf
+    s = s & "                   MOVE 'AA' TO W-OUT" & vbLf
+    s = s & "               ELSE" & vbLf
+    s = s & "                   MOVE 'BB' TO W-OUT" & vbLf
+    s = s & "               END-IF" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               CONTINUE" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "           GOBACK." & vbLf
+    s = s & "       READ-SEC SECTION." & vbLf
+    s = s & "       READS-000." & vbLf
+    s = s & "           MOVE FD-REC TO W-WK." & vbLf
+    s = s & "       READS-999." & vbLf
+    s = s & "           EXIT." & vbLf
+
+    Dim flow As OrderedDict
+    Set flow = CobolFlow.Analyze_Flow(s, New Collection)
+    TestRunner.Assert_Equal CLng(6), CLng(flow.Item("arms").Count), "blocker-steer: 6 arms"
+    TestRunner.Assert_Equal CLng(0), CLng(UncovCount_(flow)), _
+        "compound-cond arms under a blocked ancestor: all covered"
+    TestRunner.Assert_Equal CLng(4), CLng(flow.Item("normalPaths")), "blocker-steer: 4 normal paths"
+    TestRunner.Assert_Equal CLng(3), CLng(flow.Item("cases").Count), "blocker-steer: 3 cases"
 End Sub
 
 ' a CALL's USING args may be modified by the callee (ADABAS RC idiom):

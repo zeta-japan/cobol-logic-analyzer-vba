@@ -68,6 +68,10 @@ Private mArmSteer As OrderedDict   ' arm token -> {Item, Val, Mode eq/ne}
 '   "dead"            - walk died before reaching a terminator
 Private mArmDiag As OrderedDict
 Private mMissCond As String        ' condition that blocked the current walk
+Private mMissTok As String         ' the needed arm that conflicted
+Private mBlockTok As String        ' blocker of the last WalkTo_ first attempt
+Private mBlockCond As String       ' its condition (attempt-1 snapshot - the
+                                   ' retries overwrite mMissCond/mMissTok)
 ' havoc retry: treat this item as unknown for one walk. Used when a tested
 ' flag has a NON-LITERAL setter (value domain not statically known) but the
 ' single loop pass runs the setter AFTER the test (read-ahead idiom), so
@@ -214,20 +218,26 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
                     Set w = WalkTo_(tok, False, entry, secLabels)
                     If CStr(w.Item("Term")) <> "" And Not CBool(w.Item("Missed")) Then
                         AddCand_ cands, covered, w
-                    ElseIf CBool(w.Item("Missed")) And Len(mMissCond) > 0 Then
+                    ElseIf CBool(w.Item("Missed")) And Len(mBlockCond) > 0 Then
                         ' annotate what steering had to work with
-                        Dim sfx As String
+                        ' suffix considers the target arm AND the blocker
+                        ' (SteerChain_ already falls back to the unset site,
+                        ' so Nothing means no site exists for that key)
+                        Dim sfx As String, sk As Variant
                         sfx = "nosteer"
-                        If mArmSteer.Exists(tok) Then
-                            ' SteerChain_ already falls back to the unset
-                            ' site, so Nothing here means no site exists
-                            If Not SteerChain_(tok) Is Nothing Then
-                                sfx = "tried"
-                            Else
-                                sfx = "nosite"
+                        For Each sk In Array(tok, mBlockTok)
+                            If Len(CStr(sk)) > 0 Then
+                                If mArmSteer.Exists(CStr(sk)) Then
+                                    If Not SteerChain_(CStr(sk)) Is Nothing Then
+                                        sfx = "tried"
+                                        Exit For
+                                    ElseIf sfx = "nosteer" Then
+                                        sfx = "nosite"
+                                    End If
+                                End If
                             End If
-                        End If
-                        mArmDiag.Add tok, "conflict|" & mMissCond & "|" & sfx
+                        Next sk
+                        mArmDiag.Add tok, "conflict|" & mBlockCond & "|" & sfx
                     Else
                         mArmDiag.Add tok, "dead"
                     End If
@@ -309,33 +319,46 @@ Private Function WalkTo_(ByVal token As String, ByVal prefElse As Boolean, _
                          ByVal entry As OrderedDict, ByVal secLabels As OrderedDict) As OrderedDict
     Dim res As OrderedDict
     Set res = TryWalk_(token, prefElse, entry, secLabels, Nothing, "")
-    ' value-driven retry (once): steer the branch chain of a literal MOVE
-    ' that satisfies the target arm's tested value (flag idiom)
-    If CBool(res.Item("Missed")) And Len(token) > 0 Then
-        Dim extra As Collection
-        Set extra = SteerChain_(token)
-        If Not extra Is Nothing Then
-            Dim res2 As OrderedDict
-            Set res2 = TryWalk_(token, prefElse, entry, secLabels, extra, "")
-            If Not CBool(res2.Item("Missed")) Then Set res = res2
-        End If
+    mBlockTok = mMissTok
+    mBlockCond = mMissCond
+    If Not CBool(res.Item("Missed")) Or Len(token) = 0 Then
+        Set WalkTo_ = res
+        Exit Function
     End If
-    ' havoc retry (once): the tested item has a NON-LITERAL setter, so its
-    ' value domain is not statically known - typically the read-ahead loop
-    ' idiom where the setter runs after the test on our single pass. Walk
-    ' once treating the item as unknown. Purely-literal items (real
-    ' constant-propagation conflicts) never get here.
-    If CBool(res.Item("Missed")) And Len(token) > 0 Then
-        If mArmSteer.Exists(token) Then
+    ' retries are keyed first on the TARGET arm's steer info, then on the
+    ' BLOCKING arm's: the target often has none (compound condition) while
+    ' the ancestor that actually conflicted is steerable / havoc-able.
+    ' Per key: (a) value/unset chain retry - steer toward a site that
+    ' satisfies or unsets the tested item; (b) havoc retry - walk treating
+    ' the item as unknown, gated on a non-literal setter existing.
+    Dim keys As Collection, rk As Variant
+    Set keys = New Collection
+    keys.Add token
+    If Len(mBlockTok) > 0 And mBlockTok <> token Then keys.Add mBlockTok
+    For Each rk In keys
+        If mArmSteer.Exists(CStr(rk)) Then
+            Dim extra As Collection
+            Set extra = SteerChain_(CStr(rk))
+            If Not extra Is Nothing Then
+                Dim res2 As OrderedDict
+                Set res2 = TryWalk_(token, prefElse, entry, secLabels, extra, "")
+                If Not CBool(res2.Item("Missed")) Then
+                    Set WalkTo_ = res2
+                    Exit Function
+                End If
+            End If
             Dim si3 As OrderedDict
-            Set si3 = mArmSteer.Item(token)
+            Set si3 = mArmSteer.Item(CStr(rk))
             If mUnsetCtx.Exists(CStr(si3.Item("Item"))) Then
                 Dim res3 As OrderedDict
                 Set res3 = TryWalk_(token, prefElse, entry, secLabels, Nothing, CStr(si3.Item("Item")))
-                If Not CBool(res3.Item("Missed")) Then Set res = res3
+                If Not CBool(res3.Item("Missed")) Then
+                    Set WalkTo_ = res3
+                    Exit Function
+                End If
             End If
         End If
-    End If
+    Next rk
     Set WalkTo_ = res
 End Function
 
@@ -358,6 +381,7 @@ Private Function TryWalk_(ByVal token As String, ByVal prefElse As Boolean, _
     mPrefElse = prefElse
     mMissed = False
     mMissCond = ""
+    mMissTok = ""
     mCurTok = token
     mSweep = False
     mHavocItem = havocItem
@@ -558,6 +582,15 @@ Private Sub RegisterAssign_(ByVal lbl As String, ByVal ctx As Collection)
             rxCallU.IgnoreCase = False
         End If
         Set m = rxCallU.Execute(lbl)
+        If m.Count = 0 Then
+            Static rxCallUV As Object
+            If rxCallUV Is Nothing Then
+                Set rxCallUV = CreateObject("VBScript.RegExp")
+                rxCallUV.Pattern = "^CALL\s+([A-Z0-9-]+)(\s+USING\s+(.+))?$"
+                rxCallUV.IgnoreCase = False
+            End If
+            Set m = rxCallUV.Execute(lbl)
+        End If
         If m.Count > 0 Then
             Dim cps As String
             cps = m.Item(0).SubMatches(2)
@@ -587,17 +620,28 @@ Private Sub RegisterAssign_(ByVal lbl As String, ByVal ctx As Collection)
         Dim ac As Collection, avv As Variant
         Set ac = ArithTargets_(lbl)
         For Each avv In ac
-            If Not mUnsetCtx.Exists(CStr(avv)) Then mUnsetCtx.Add CStr(avv), CopyCtx_(ctx)
+            UnsetWithDesc_ CStr(avv), ctx
         Next avv
+        Exit Sub
+    End If
+    ' READ <file> INTO <item>: the record lands in <item> - unknown value
+    ' (bare READ: FD record area not tracked - accepted limitation)
+    If Left$(lbl, 5) = "READ " Then
+        i = InStr(lbl, " INTO ")
+        If i > 0 Then
+            k = Trim$(Mid$(lbl, i + 6))
+            i = InStr(k, " ")
+            If i > 0 Then k = Left$(k, i - 1)
+            k = UCase$(k)
+            If Len(k) > 0 Then UnsetWithDesc_ k, ctx
+        End If
         Exit Sub
     End If
     If Left$(lbl, 11) = "INITIALIZE " Then
         k = Trim$(Mid$(lbl, 12))
         i = InStr(k, " ")
         If i > 0 Then k = Left$(k, i - 1)
-        If Len(k) > 0 Then
-            If Not mUnsetCtx.Exists(k) Then mUnsetCtx.Add k, CopyCtx_(ctx)
-        End If
+        If Len(k) > 0 Then UnsetWithDesc_ k, ctx
         Exit Sub
     End If
     If Left$(lbl, 5) <> "MOVE " Then Exit Sub
@@ -618,10 +662,25 @@ Private Sub RegisterAssign_(ByVal lbl As String, ByVal ctx As Collection)
     If m.Count > 0 Then
         dts = Split(Trim$(m.Item(0).SubMatches(1)), " ")
         For i = LBound(dts) To UBound(dts)
-            If Len(Trim$(dts(i))) > 0 Then
-                If Not mUnsetCtx.Exists(Trim$(dts(i))) Then mUnsetCtx.Add Trim$(dts(i)), CopyCtx_(ctx)
-            End If
+            If Len(Trim$(dts(i))) > 0 Then UnsetWithDesc_ Trim$(dts(i)), ctx
         Next i
+    End If
+End Sub
+
+' an unknown-value write to nm unsets nm AND its subordinate fields
+' (group MOVE / group CALL param / READ INTO a group record).
+' NOTE: INITIALIZE targets also land here - strictly its values ARE known
+' (SPACE/ZERO), so this over-approximates: a steered retry may route
+' through an INITIALIZE that cannot produce the wanted value. Accepted -
+' it only ever ADDS candidate routes, and the conservative walker
+' invalidation treats INITIALIZE the same way.
+Private Sub UnsetWithDesc_(ByVal nm As String, ByVal ctx As Collection)
+    If Not mUnsetCtx.Exists(nm) Then mUnsetCtx.Add nm, CopyCtx_(ctx)
+    If mDesc.Exists(nm) Then
+        Dim dv As Variant
+        For Each dv In mDesc.Item(nm)
+            If Not mUnsetCtx.Exists(CStr(dv)) Then mUnsetCtx.Add CStr(dv), CopyCtx_(ctx)
+        Next dv
     End If
 End Sub
 
@@ -1558,6 +1617,7 @@ Private Function ApplyOne_(ByVal node As OrderedDict, ByVal stack As Collection,
                     Else
                         mMissed = True
                         mMissCond = CStr(node.Item("condition"))
+                        mMissTok = tkT
                         If okE Then armSel = "E"
                     End If
                 ElseIf mNeed.Exists(tkE) Then
@@ -1566,6 +1626,7 @@ Private Function ApplyOne_(ByVal node As OrderedDict, ByVal stack As Collection,
                     Else
                         mMissed = True
                         mMissCond = CStr(node.Item("condition"))
+                        mMissTok = tkE
                         If okT Then armSel = "T"
                     End If
                 ElseIf mSweep Then
@@ -1796,7 +1857,7 @@ Private Sub ApplyAction_(ByVal node As OrderedDict, ByVal stack As Collection, B
     v1 = Left$(lbl & " ", InStr(lbl & " ", " "))
     Select Case v1
         Case "PERFORM ", "CALL ", "MOVE ", "COMPUTE ", "STRING ", "INITIALIZE ", "ACCEPT ", _
-             "GO ", "ADD ", "SUBTRACT ", "MULTIPLY ", "DIVIDE "
+             "GO ", "ADD ", "SUBTRACT ", "MULTIPLY ", "DIVIDE ", "READ "
             ' fall through to the verb handlers below
         Case Else
             If Left$(lbl, 5) = "EXEC " Then
@@ -1867,6 +1928,28 @@ Private Sub ApplyAction_(ByVal node As OrderedDict, ByVal stack As Collection, B
         Exit Sub
     End If
 
+    ' READ <file> INTO <item>: the record lands in <item> - unknown value.
+    ' A bare READ (record area only) is NOT tracked - the FD 01 stays a
+    ' generic action and is never env-invalidated (accepted limitation).
+    If v1 = "READ " Then
+        Dim rdK As String, rdP As Long
+        rdP = InStr(lbl, " INTO ")
+        If rdP > 0 Then
+            rdK = Trim$(Mid$(lbl, rdP + 6))
+            rdP = InStr(rdK, " ")
+            If rdP > 0 Then rdK = Left$(rdK, rdP - 1)
+            rdK = UCase$(rdK)
+        End If
+        If Len(rdK) > 0 Then
+            AddAssignEvent_ tr, rdK, lbl, "compute", ln
+            Invalidate_ tr.Item("Env"), rdK
+        Else
+            AddEvent_ tr, "action", lbl, ln
+        End If
+        AddCapped_ out, tr
+        Exit Sub
+    End If
+
     ' arithmetic verbs change their targets - invalidate (and surface as
     ' computed assigns); without this a MOVE ZERO + ADD 1 counter keeps
     ' the stale constant and falsely prunes both arms of later tests
@@ -1885,6 +1968,16 @@ Private Sub ApplyAction_(ByVal node As OrderedDict, ByVal stack As Collection, B
     ' CALL
     If v1 = "CALL " Then
     Set m = rxCall.Execute(lbl)
+    If m.Count = 0 Then
+        ' variable-name call: CALL WS-PGM-NAME USING ... (same submatch layout)
+        Static rxCallV As Object
+        If rxCallV Is Nothing Then
+            Set rxCallV = CreateObject("VBScript.RegExp")
+            rxCallV.Pattern = "^CALL\s+([A-Z0-9-]+)(\s+USING\s+(.+))?$"
+            rxCallV.IgnoreCase = False
+        End If
+        Set m = rxCallV.Execute(lbl)
+    End If
     If m.Count > 0 Then
         Dim tgt As String, params As String
         tgt = m.Item(0).SubMatches(0)
@@ -2242,6 +2335,7 @@ Private Sub ApplyEvaluate_(ByVal node As OrderedDict, ByVal stack As Collection,
             Else
                 mMissed = True
                 mMissCond = expr & " = " & CStr(cs(needIdx).Item("condition"))
+                mMissTok = CStr(cs(needIdx).Item("id"))
             End If
         ElseIf needSkip Then
             If hasOther Or (litAll And matchedIdx > 0) Then
