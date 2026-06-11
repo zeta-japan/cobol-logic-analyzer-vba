@@ -66,6 +66,11 @@ Private mArmSteer As OrderedDict   ' arm token -> {Item, Val, Mode eq/ne}
 '   "dead"            - walk died before reaching a terminator
 Private mArmDiag As OrderedDict
 Private mMissCond As String        ' condition that blocked the current walk
+' havoc retry: treat this item as unknown for one walk. Used when a tested
+' flag has a NON-LITERAL setter (value domain not statically known) but the
+' single loop pass runs the setter AFTER the test (read-ahead idiom), so
+' neither value- nor unset-steering can reorder the walk past the conflict.
+Private mHavocItem As String
 
 Private mNodes As Collection      ' AST root nodes
 Private mOwners As Collection     ' {name,line,kind,ownerEnd,secEnd} sorted
@@ -281,7 +286,7 @@ End Function
 Private Function WalkTo_(ByVal token As String, ByVal prefElse As Boolean, _
                          ByVal entry As OrderedDict, ByVal secLabels As OrderedDict) As OrderedDict
     Dim res As OrderedDict
-    Set res = TryWalk_(token, prefElse, entry, secLabels, Nothing)
+    Set res = TryWalk_(token, prefElse, entry, secLabels, Nothing, "")
     ' value-driven retry (once): steer the branch chain of a literal MOVE
     ' that satisfies the target arm's tested value (flag idiom)
     If CBool(res.Item("Missed")) And Len(token) > 0 Then
@@ -289,8 +294,24 @@ Private Function WalkTo_(ByVal token As String, ByVal prefElse As Boolean, _
         Set extra = SteerChain_(token)
         If Not extra Is Nothing Then
             Dim res2 As OrderedDict
-            Set res2 = TryWalk_(token, prefElse, entry, secLabels, extra)
+            Set res2 = TryWalk_(token, prefElse, entry, secLabels, extra, "")
             If Not CBool(res2.Item("Missed")) Then Set res = res2
+        End If
+    End If
+    ' havoc retry (once): the tested item has a NON-LITERAL setter, so its
+    ' value domain is not statically known - typically the read-ahead loop
+    ' idiom where the setter runs after the test on our single pass. Walk
+    ' once treating the item as unknown. Purely-literal items (real
+    ' constant-propagation conflicts) never get here.
+    If CBool(res.Item("Missed")) And Len(token) > 0 Then
+        If mArmSteer.Exists(token) Then
+            Dim si3 As OrderedDict
+            Set si3 = mArmSteer.Item(token)
+            If mUnsetCtx.Exists(CStr(si3.Item("Item"))) Then
+                Dim res3 As OrderedDict
+                Set res3 = TryWalk_(token, prefElse, entry, secLabels, Nothing, CStr(si3.Item("Item")))
+                If Not CBool(res3.Item("Missed")) Then Set res = res3
+            End If
         End If
     End If
     Set WalkTo_ = res
@@ -298,7 +319,7 @@ End Function
 
 Private Function TryWalk_(ByVal token As String, ByVal prefElse As Boolean, _
                           ByVal entry As OrderedDict, ByVal secLabels As OrderedDict, _
-                          ByVal extraNeed As Collection) As OrderedDict
+                          ByVal extraNeed As Collection, ByVal havocItem As String) As OrderedDict
     Set mNeed = New OrderedDict
     Dim v As Variant
     If Len(token) > 0 Then
@@ -317,10 +338,12 @@ Private Function TryWalk_(ByVal token As String, ByVal prefElse As Boolean, _
     mMissCond = ""
     mCurTok = token
     mSweep = False
+    mHavocItem = havocItem
     Set mReplayList = Nothing
 
     Dim res As OrderedDict
     Set res = RunWalk_(entry, secLabels)
+    mHavocItem = ""
     If Len(token) > 0 And Not mMissed Then
         If Not ArmOnTrace_(res, token) Then mMissed = True
     End If
@@ -584,16 +607,32 @@ Private Sub CtxWalk_(ByVal list As Collection, ByVal stack As Collection, ByVal 
             CtxWalk_ n.Item("elseChildren"), stack, CtxPlus_(ctx, CStr(n.Item("id")) & ":else")
         ElseIf t = "evaluate" Then
             Dim cs As Collection, wi As Long, hasOther As Boolean, wlit As String
+            Dim otherId As String, allLits As String
             Set cs = n.Item("cases")
             hasOther = False
+            otherId = ""
+            allLits = ""
             For wi = 1 To cs.Count
                 RegisterCtx_ CStr(cs(wi).Item("id")), ctx
-                If CStr(cs(wi).Item("condition")) = "OTHER" Then hasOther = True
+                If CStr(cs(wi).Item("condition")) = "OTHER" Then
+                    hasOther = True
+                    otherId = CStr(cs(wi).Item("id"))
+                End If
                 If GetLiteral_(CStr(cs(wi).Item("condition")), wlit) Then
                     AddSteer_ CStr(cs(wi).Item("id")), CStr(n.Item("expression")), NormVal_(wlit), "eq"
+                    If Len(allLits) > 0 Then allLits = allLits & "|"
+                    allLits = allLits & NormVal_(wlit)
                 End If
                 CtxWalk_ cs(wi).Item("children"), stack, CtxPlus_(ctx, CStr(cs(wi).Item("id")))
             Next wi
+            ' OTHER / implicit skip need "a value outside every listed WHEN"
+            If Len(allLits) > 0 Then
+                If hasOther Then
+                    AddSteer_ otherId, CStr(n.Item("expression")), allLits, "ne"
+                Else
+                    AddSteer_ CStr(n.Item("id")) & ":skip", CStr(n.Item("expression")), allLits, "ne"
+                End If
+            End If
             If Not hasOther Then RegisterCtx_ CStr(n.Item("id")) & ":skip", ctx
         ElseIf t = "search" Then
             If Not IsNull(n.Item("atEndLine")) Then
@@ -1696,7 +1735,9 @@ Private Sub ApplyAction_(ByVal node As OrderedDict, ByVal stack As Collection, B
                 anyDst = True
                 AddAssignEvent_ tr, dst, srcTxt, "move", ln
                 Invalidate_ tr.Item("Env"), dst
-                If GetLiteral_(srcTxt, lit) Then tr.Item("Env").Add dst, lit
+                If GetLiteral_(srcTxt, lit) Then
+                    If dst <> mHavocItem Then tr.Item("Env").Add dst, lit
+                End If
             End If
         Next di
         If Not anyDst Then AddEvent_ tr, "action", lbl, ln

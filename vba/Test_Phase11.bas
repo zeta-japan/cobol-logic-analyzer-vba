@@ -13,7 +13,100 @@ Public Sub Run_All()
     TestRunner.Run_One "Test_Flow_CopyTolerance"
     TestRunner.Run_One "Test_Flow_LoopAndFlag"
     TestRunner.Run_One "Test_Flow_UnsetSteer"
+    TestRunner.Run_One "Test_Flow_ReadAheadIf"
+    TestRunner.Run_One "Test_Flow_ReadAheadEval"
 End Sub
+
+' read-ahead loop idiom: the flag is initialized to a literal and the real
+' setter (non-literal MOVE) runs at the BOTTOM of the loop body, i.e. AFTER
+' the test on our single inlined pass. Value/unset steering cannot reorder
+' the walk, so the havoc retry treats the flag as unknown. ver4 oracle:
+' 2 arms, all covered, 2 cases.
+Public Sub Test_Flow_ReadAheadIf()
+    Dim s As String
+    s = ""
+    s = s & "       WORKING-STORAGE SECTION." & vbLf
+    s = s & "       01  F-EOF   PIC X(01)." & vbLf
+    s = s & "       01  FD-KBN  PIC X(01)." & vbLf
+    s = s & "       01  F-MAS1  PIC X(01)." & vbLf
+    s = s & "       01  W-OUT   PIC X(02)." & vbLf
+    s = s & "       PROCEDURE DIVISION." & vbLf
+    s = s & "       MAIN-PROC SECTION." & vbLf
+    s = s & "       MAIN-000." & vbLf
+    s = s & "           MOVE ' ' TO F-MAS1." & vbLf
+    s = s & "           PERFORM LOOP-SEC UNTIL F-EOF = '1'." & vbLf
+    s = s & "           GOBACK." & vbLf
+    s = s & "       LOOP-SEC SECTION." & vbLf
+    s = s & "       LOOP-000." & vbLf
+    s = s & "           IF F-MAS1 = 'B'" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               MOVE 'BB' TO W-OUT" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               MOVE 'KK' TO W-OUT" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "           MOVE FD-KBN TO F-MAS1." & vbLf
+    s = s & "       LOOP-999." & vbLf
+    s = s & "           EXIT." & vbLf
+
+    Dim flow As OrderedDict
+    Set flow = CobolFlow.Analyze_Flow(s, New Collection)
+    TestRunner.Assert_Equal CLng(2), CLng(flow.Item("arms").Count), "read-ahead IF: 2 arms"
+    TestRunner.Assert_Equal CLng(0), CLng(UncovCount_(flow)), _
+        "loop-carried flag arm covered via havoc retry"
+    TestRunner.Assert_Equal CLng(2), CLng(flow.Item("cases").Count), "read-ahead IF: 2 cases"
+End Sub
+
+' same idiom with EVALUATE (the shape seen in real sources): WHEN literals
+' plus WHEN OTHER, flag set from a record field after the EVALUATE.
+Public Sub Test_Flow_ReadAheadEval()
+    Dim s As String
+    s = ""
+    s = s & "       WORKING-STORAGE SECTION." & vbLf
+    s = s & "       01  F-EOF   PIC X(01)." & vbLf
+    s = s & "       01  FD-KBN  PIC X(01)." & vbLf
+    s = s & "       01  F-MAS1  PIC X(01)." & vbLf
+    s = s & "       01  W-OUT   PIC X(02)." & vbLf
+    s = s & "       PROCEDURE DIVISION." & vbLf
+    s = s & "       MAIN-PROC SECTION." & vbLf
+    s = s & "       MAIN-000." & vbLf
+    s = s & "           MOVE ' ' TO F-MAS1." & vbLf
+    s = s & "           PERFORM LOOP-SEC UNTIL F-EOF = '1'." & vbLf
+    s = s & "           GOBACK." & vbLf
+    s = s & "       LOOP-SEC SECTION." & vbLf
+    s = s & "       LOOP-000." & vbLf
+    s = s & "           EVALUATE F-MAS1" & vbLf
+    s = s & "               WHEN ' '" & vbLf
+    s = s & "                   CONTINUE" & vbLf
+    s = s & "               WHEN 'B'" & vbLf
+    s = s & "                   MOVE 'BB' TO W-OUT" & vbLf
+    s = s & "               WHEN OTHER" & vbLf
+    s = s & "                   MOVE 'ZZ' TO W-OUT" & vbLf
+    s = s & "           END-EVALUATE." & vbLf
+    s = s & "           MOVE FD-KBN TO F-MAS1." & vbLf
+    s = s & "       LOOP-999." & vbLf
+    s = s & "           EXIT." & vbLf
+
+    Dim flow As OrderedDict
+    Set flow = CobolFlow.Analyze_Flow(s, New Collection)
+    TestRunner.Assert_Equal CLng(3), CLng(flow.Item("arms").Count), "read-ahead EVALUATE: 3 arms"
+    TestRunner.Assert_Equal CLng(0), CLng(UncovCount_(flow)), _
+        "WHEN 'B' and WHEN OTHER covered via havoc retry"
+    TestRunner.Assert_Equal CLng(3), CLng(flow.Item("cases").Count), "read-ahead EVALUATE: 3 cases"
+End Sub
+
+Private Function UncovCount_(ByVal flow As OrderedDict) As Long
+    Dim a As OrderedDict, c As OrderedDict, v As Variant, covered As Boolean, n As Long
+    For Each a In flow.Item("arms")
+        covered = False
+        For Each c In flow.Item("cases")
+            For Each v In c.Item("arms")
+                If CStr(v) = CStr(a.Item("Token")) Then covered = True
+            Next v
+        Next c
+        If Not covered Then n = n + 1
+    Next a
+    UncovCount_ = n
+End Function
 
 ' DB-flag idiom: F-MAS1 is initialized to a literal and set from a RECORD
 ' FIELD (non-literal MOVE) in a sibling branch - no literal 'B' site exists,
