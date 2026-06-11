@@ -63,7 +63,8 @@ Private mUnsetCtx As OrderedDict   ' ITEM -> reach ctx of a site making it unkno
 Private mArmSteer As OrderedDict   ' arm token -> {Item, Val, Mode eq/ne}
 ' uncovered-arm diagnostics (reason codes; the matrix renders them in JP):
 '   "noctx"           - arm has no reach context (never seen by the ctx walk)
-'   "conflict|<cond>" - required arm infeasible under propagated constants
+'   "conflict|<cond>|<tried/nosite/nosteer>" - required arm infeasible
+'                       under propagated constants (+ steering status)
 '   "dead"            - walk died before reaching a terminator
 Private mArmDiag As OrderedDict
 Private mMissCond As String        ' condition that blocked the current walk
@@ -210,9 +211,9 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
                         Dim sfx As String
                         sfx = "nosteer"
                         If mArmSteer.Exists(tok) Then
+                            ' SteerChain_ already falls back to the unset
+                            ' site, so Nothing here means no site exists
                             If Not SteerChain_(tok) Is Nothing Then
-                                sfx = "tried"
-                            ElseIf mUnsetCtx.Exists(CStr(mArmSteer.Item(tok).Item("Item"))) Then
                                 sfx = "tried"
                             Else
                                 sfx = "nosite"
@@ -688,6 +689,7 @@ Private Sub CtxGoTo_(ByVal lbl As String, ByVal stack As Collection, ByVal ctx A
     Dim tgt As String
     tgt = Mid$(lbl, 7)
     If InStr(tgt, " ") > 0 Then Exit Sub
+    If mTermSecs.Exists(tgt) Then Exit Sub   ' terminator bodies stay out
     If mCtxVisited.Exists(tgt) Then Exit Sub
     If OnStack_(stack, tgt) Then Exit Sub
     Dim ox As OrderedDict
@@ -1700,9 +1702,13 @@ Private Function ArithTargets_(ByVal lbl As String) As Collection
     toks = Split(Trim$(tail), " ")
     For i = LBound(toks) To UBound(toks)
         t = Trim$(toks(i))
+        ' targets always precede a conditional phrase / scope terminator
+        If t = "ON" Or t = "NOT" Or Left$(t, 4) = "END-" Then Exit For
         If t = "ROUNDED" Or t = "REMAINDER" Or Len(t) = 0 Then
             ' skip keywords; REMAINDER's operand is collected next round
-        ElseIf Not t Like "*[!A-Z0-9-]*" And Not t Like "#*" Then
+        ElseIf Not t Like "*[!A-Z0-9-]*" And t Like "*[A-Z]*" Then
+            ' identifier = charset-clean AND contains a letter (digit-leading
+            ' data-names are legal; pure numerics are literals)
             c.Add t
         End If
     Next i
@@ -1779,12 +1785,21 @@ Private Sub ApplyAction_(ByVal node As OrderedDict, ByVal stack As Collection, B
             Dim gTgt As String
             gTgt = Mid$(lbl, 7)
             If InStr(gTgt, " ") = 0 Then
+                ' GO TO a terminator section = abend, same as PERFORM
+                If mTermSecs.Exists(gTgt) Then
+                    tr.Add "Term", "abend:" & gTgt
+                    tr.Add "TriggerLine", ln
+                    AddEvent_ tr, "term", "ABEND-VIA " & gTgt, ln
+                    AddCapped_ out, tr
+                    Exit Sub
+                End If
                 Dim gOx As OrderedDict
                 Set gOx = OwnerByName_(gTgt)
                 If Not gOx Is Nothing Then
                     If Not mGotoSeen.Exists(gTgt) And Not OnStack_(stack, gTgt) Then
                         mGotoSeen.Add gTgt, True
                         AddEvent_ tr, "action", lbl, ln
+                        AddEnterEvent_ tr, gTgt, secLabels, CLng(gOx.Item("line"))
                         Dim gSeed As Collection, gSubs As Collection, gSb As OrderedDict
                         Set gSeed = New Collection
                         gSeed.Add tr
@@ -1797,6 +1812,12 @@ Private Sub ApplyAction_(ByVal node As OrderedDict, ByVal stack As Collection, B
                         Next gSb
                         Exit Sub
                     End If
+                    ' resolved but already followed / cyclic: control still
+                    ' transfers in reality - do not walk past the jump
+                    AddEvent_ tr, "action", lbl, ln
+                    tr.Add "SkipRest", True
+                    AddCapped_ out, tr
+                    Exit Sub
                 End If
             End If
         End If
