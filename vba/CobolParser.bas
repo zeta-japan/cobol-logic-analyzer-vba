@@ -210,6 +210,9 @@ Public Function Merge_ContinuationLines(ByVal lines As Collection) As Collection
                 take = True
             ElseIf Left$(txt, 5) = "CALL " And InStr(txt & " ", " USING ") > 0 And Right$(txt, 1) <> "." Then
                 If Test_OperandOnly(ntxt) Then take = True
+            ElseIf txt = "PERFORM" Or Right$(txt, 8) = " PERFORM" Then
+                ' split-line PERFORM: the target sits on the next line
+                If Test_OperandOnly(ntxt) Then take = True
             End If
             If Not take Then Exit Do
             txt = txt & " " & ntxt

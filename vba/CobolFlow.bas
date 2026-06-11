@@ -195,13 +195,21 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
             If rounds > arms.Count Then Exit Do
         Loop
 
+        ' call edges from the ver2 extractor: lets the noctx diagnostics
+        ' name the unreached section AND who the call graph says invokes
+        ' it - distinguishing a flow-walker gap from genuinely dead code
+        Dim callG As OrderedDict
+        On Error Resume Next
+        Set callG = CobolParser.Get_CallRelationships(lines, struct)
+        On Error GoTo 0
+
         Dim a As OrderedDict, tok As String
         Set mArmDiag = New OrderedDict
         For Each a In arms
             tok = CStr(a.Item("Token"))
             If Not covered.Exists(tok) Then
                 If Not mArmCtx.Exists(tok) Then
-                    mArmDiag.Add tok, "noctx"
+                    mArmDiag.Add tok, "noctx|" & NoCtxDetail_(CLng(a.Item("Line")), callG)
                 Else
                     Set w = WalkTo_(tok, False, entry, secLabels)
                     If CStr(w.Item("Term")) <> "" And Not CBool(w.Item("Missed")) Then
@@ -2012,6 +2020,39 @@ End Sub
 Private Function TrSkips_(ByVal tr As OrderedDict) As Boolean
     TrSkips_ = False
     If tr.Exists("SkipRest") Then TrSkips_ = CBool(tr.Item("SkipRest"))
+End Function
+
+' "<section name>|<caller1,caller2,...>" for an unreached arm: which
+' section owns the line, and who the static call graph says invokes it
+Private Function NoCtxDetail_(ByVal lineNo As Long, ByVal callG As OrderedDict) As String
+    Dim secName As String, o As OrderedDict
+    secName = ""
+    For Each o In mOwners
+        If CStr(o.Item("kind")) = "section" Then
+            If lineNo >= CLng(o.Item("line")) And lineNo <= CLng(o.Item("secEnd")) Then
+                secName = CStr(o.Item("name"))
+                Exit For
+            End If
+        End If
+    Next o
+    Dim callers As String, e As OrderedDict, nHit As Long
+    callers = ""
+    If Len(secName) > 0 And Not callG Is Nothing Then
+        If callG.Exists("edges") Then
+            For Each e In callG.Item("edges")
+                If UCase$(CStr(e.Item("to"))) = secName And Left$(CStr(e.Item("kind")), 7) = "perform" Then
+                    If InStr("," & callers & ",", "," & CStr(e.Item("from")) & ",") = 0 Then
+                        nHit = nHit + 1
+                        If nHit <= 3 Then
+                            If Len(callers) > 0 Then callers = callers & ","
+                            callers = callers & CStr(e.Item("from"))
+                        End If
+                    End If
+                End If
+            Next e
+        End If
+    End If
+    NoCtxDetail_ = secName & "|" & callers
 End Function
 
 Private Function OnStack_(ByVal stack As Collection, ByVal nm As String) As Boolean

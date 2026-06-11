@@ -166,8 +166,24 @@ Private Function DiagJp_(ByVal flow As OrderedDict, ByVal token As String) As St
     If Not d.Exists(token) Then Exit Function
     Dim c As String
     c = CStr(d.Item(token))
-    If c = "noctx" Then
-        DiagJp_ = "｜経路なし（PERFORM 未到達領域）"
+    If Left$(c, 5) = "noctx" Then
+        Dim nb As String, p1 As Long, p2 As Long, nSec As String, nCallers As String
+        nb = Mid$(c, 7)
+        p1 = InStr(nb, "|")
+        If p1 > 0 Then
+            nSec = Left$(nb, p1 - 1)
+            nCallers = Mid$(nb, p1 + 1)
+        Else
+            nSec = nb
+            nCallers = ""
+        End If
+        If Len(nSec) = 0 Then
+            DiagJp_ = "｜経路なし（PERFORM 未到達領域）"
+        ElseIf Len(nCallers) > 0 Then
+            DiagJp_ = "｜経路なし（" & nSec & "：呼出関係表では " & nCallers & " から呼出あり→解析ギャップの可能性、要連絡）"
+        Else
+            DiagJp_ = "｜経路なし（" & nSec & "：呼出記録なし→デッドコード/動的分岐の可能性）"
+        End If
     ElseIf Left$(c, 9) = "conflict|" Then
         Dim body As String, q As Long, sfxJp As String
         body = Mid$(c, 10)
