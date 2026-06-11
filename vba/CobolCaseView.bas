@@ -169,10 +169,20 @@ Private Function DiagJp_(ByVal flow As OrderedDict, ByVal token As String) As St
     If Left$(c, 5) = "noctx" Then
         Dim nb As String, p1 As Long, p2 As Long, nSec As String, nCallers As String
         nb = Mid$(c, 7)
+        Dim nRefs As String
+        nRefs = ""
         p1 = InStr(nb, "|")
         If p1 > 0 Then
             nSec = Left$(nb, p1 - 1)
-            nCallers = Mid$(nb, p1 + 1)
+            nRefs = Mid$(nb, p1 + 1)
+            p2 = InStr(nRefs, "|")
+            If p2 > 0 Then
+                nCallers = Left$(nRefs, p2 - 1)
+                nRefs = Mid$(nRefs, p2 + 1)
+            Else
+                nCallers = nRefs
+                nRefs = ""
+            End If
         Else
             nSec = nb
             nCallers = ""
@@ -181,8 +191,10 @@ Private Function DiagJp_(ByVal flow As OrderedDict, ByVal token As String) As St
             DiagJp_ = "｜経路なし（PERFORM 未到達領域）"
         ElseIf Len(nCallers) > 0 Then
             DiagJp_ = "｜経路なし（" & nSec & "：呼出関係表では " & nCallers & " から呼出あり→解析ギャップの可能性、要連絡）"
+        ElseIf Len(nRefs) > 0 Then
+            DiagJp_ = "｜経路なし（" & nSec & "：参照行 " & Replace(nRefs, "~", " ／ ") & "）"
         Else
-            DiagJp_ = "｜経路なし（" & nSec & "：呼出記録なし→デッドコード/動的分岐の可能性）"
+            DiagJp_ = "｜経路なし（" & nSec & "：呼出記録なし・ソース内参照も未検出→デッドコードの可能性）"
         End If
     ElseIf Left$(c, 9) = "conflict|" Then
         Dim body As String, q As Long, sfxJp As String

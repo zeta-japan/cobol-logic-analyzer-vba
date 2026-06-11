@@ -16,6 +16,55 @@ Public Sub Run_All()
     TestRunner.Run_One "Test_Flow_ReadAheadIf"
     TestRunner.Run_One "Test_Flow_ReadAheadEval"
     TestRunner.Run_One "Test_Flow_ArithAndGoto"
+    TestRunner.Run_One "Test_Flow_CallArgUnset"
+End Sub
+
+' a CALL's USING args may be modified by the callee (ADABAS RC idiom):
+' the call site registers them as unset sites, so a later test blocked by
+' the propagated init constant is routed through the calling branch.
+' ver4 oracle (BIGCASE6): the CALL sits on the NON-preferred arm and
+' passes a GROUP param while the test reads a subordinate field - the
+' arm is reachable ONLY via the call-site unset chain (incl. descendant
+' expansion). 4 arms, all covered, 3 normal paths, 3 cases.
+Public Sub Test_Flow_CallArgUnset()
+    Dim s As String
+    s = ""
+    s = s & "       WORKING-STORAGE SECTION." & vbLf
+    s = s & "       01  W-SW    PIC X(01)." & vbLf
+    s = s & "       01  W-PARAM." & vbLf
+    s = s & "           03  W-RC    PIC 9(01)." & vbLf
+    s = s & "           03  W-DATA  PIC X(10)." & vbLf
+    s = s & "       01  W-OUT   PIC X(02)." & vbLf
+    s = s & "       PROCEDURE DIVISION." & vbLf
+    s = s & "       MAIN-PROC SECTION." & vbLf
+    s = s & "       MAIN-000." & vbLf
+    s = s & "           MOVE ZERO TO W-RC." & vbLf
+    s = s & "           IF W-SW = '1'" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               CONTINUE" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               PERFORM CALL-SEC" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "           IF W-RC = 3" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               MOVE 'AA' TO W-OUT" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               MOVE 'BB' TO W-OUT" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "           GOBACK." & vbLf
+    s = s & "       CALL-SEC SECTION." & vbLf
+    s = s & "       CALLS-000." & vbLf
+    s = s & "           CALL 'SUBX' USING W-PARAM." & vbLf
+    s = s & "       CALLS-999." & vbLf
+    s = s & "           EXIT." & vbLf
+
+    Dim flow As OrderedDict
+    Set flow = CobolFlow.Analyze_Flow(s, New Collection)
+    TestRunner.Assert_Equal CLng(4), CLng(flow.Item("arms").Count), "call-arg: 4 arms"
+    TestRunner.Assert_Equal CLng(0), CLng(UncovCount_(flow)), _
+        "RC=3 arm covered by routing through the CALL branch"
+    TestRunner.Assert_Equal CLng(3), CLng(flow.Item("normalPaths")), "call-arg: 2 seeds + 1 unset-steered retry"
+    TestRunner.Assert_Equal CLng(3), CLng(flow.Item("cases").Count), "call-arg: 2 normal + 1 synth"
 End Sub
 
 ' (a) arithmetic verbs invalidate their targets - a MOVE ZERO + ADD 1

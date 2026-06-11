@@ -209,7 +209,7 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
             tok = CStr(a.Item("Token"))
             If Not covered.Exists(tok) Then
                 If Not mArmCtx.Exists(tok) Then
-                    mArmDiag.Add tok, "noctx|" & NoCtxDetail_(CLng(a.Item("Line")), callG)
+                    mArmDiag.Add tok, "noctx|" & NoCtxDetail_(CLng(a.Item("Line")), callG, lines)
                 Else
                     Set w = WalkTo_(tok, False, entry, secLabels)
                     If CStr(w.Item("Term")) <> "" And Not CBool(w.Item("Missed")) Then
@@ -548,6 +548,39 @@ Private Sub RegisterAssign_(ByVal lbl As String, ByVal ctx As Collection)
         rxMA.IgnoreCase = False
     End If
     Dim m As Object, dts() As String, i As Long, k As String
+    ' CALL may modify its USING args (ADABAS RC etc.) - unset sites so
+    ' steering/havoc can route a blocked test through the call
+    If Left$(lbl, 5) = "CALL " Then
+        Static rxCallU As Object
+        If rxCallU Is Nothing Then
+            Set rxCallU = CreateObject("VBScript.RegExp")
+            rxCallU.Pattern = "^CALL\s+'([A-Z0-9-]+)'(\s+USING\s+(.+))?$"
+            rxCallU.IgnoreCase = False
+        End If
+        Set m = rxCallU.Execute(lbl)
+        If m.Count > 0 Then
+            Dim cps As String
+            cps = m.Item(0).SubMatches(2)
+            If Len(cps) > 0 Then
+                dts = Split(Trim$(cps), " ")
+                For i = LBound(dts) To UBound(dts)
+                    k = UCase$(Trim$(dts(i)))
+                    If Len(k) > 0 Then
+                        If Not mUnsetCtx.Exists(k) Then mUnsetCtx.Add k, CopyCtx_(ctx)
+                        ' the RC idiom passes a GROUP and tests a field
+                        ' inside it - register subordinates too
+                        If mDesc.Exists(k) Then
+                            Dim dv As Variant
+                            For Each dv In mDesc.Item(k)
+                                If Not mUnsetCtx.Exists(CStr(dv)) Then mUnsetCtx.Add CStr(dv), CopyCtx_(ctx)
+                            Next dv
+                        End If
+                    End If
+                Next i
+            End If
+        End If
+        Exit Sub
+    End If
     ' arithmetic targets become unknown - register as unset sites
     If Left$(lbl, 4) = "ADD " Or Left$(lbl, 9) = "SUBTRACT " Or _
        Left$(lbl, 9) = "MULTIPLY " Or Left$(lbl, 7) = "DIVIDE " Then
@@ -2022,25 +2055,50 @@ Private Function TrSkips_(ByVal tr As OrderedDict) As Boolean
     If tr.Exists("SkipRest") Then TrSkips_ = CBool(tr.Item("SkipRest"))
 End Function
 
-' "<section name>|<caller1,caller2,...>" for an unreached arm: which
-' section owns the line, and who the static call graph says invokes it
-Private Function NoCtxDetail_(ByVal lineNo As Long, ByVal callG As OrderedDict) As String
-    Dim secName As String, o As OrderedDict
+' "<section>|<callers>|<refs>" for an unreached arm: the owning section,
+' who the static call graph says invokes it (the section OR any paragraph
+' inside it), and - when the graph has nothing - raw source lines that
+' mention the section name (the invocation form verbatim: GO TO ...
+' DEPENDING, SORT INPUT PROCEDURE, etc.), so the matrix itself shows HOW
+' the region is entered without anyone grepping the source by hand.
+Private Function NoCtxDetail_(ByVal lineNo As Long, ByVal callG As OrderedDict, _
+                              ByVal lines As Collection) As String
+    Dim secName As String, o As OrderedDict, secLo As Long, secHi As Long
     secName = ""
     For Each o In mOwners
         If CStr(o.Item("kind")) = "section" Then
             If lineNo >= CLng(o.Item("line")) And lineNo <= CLng(o.Item("secEnd")) Then
                 secName = CStr(o.Item("name"))
+                secLo = CLng(o.Item("line"))
+                secHi = CLng(o.Item("secEnd"))
                 Exit For
+            End If
+        End If
+    Next o
+    If Len(secName) = 0 Then
+        NoCtxDetail_ = "||"
+        Exit Function
+    End If
+    ' every label belonging to the section counts as an entry point
+    Dim names As String
+    names = "," & secName & ","
+    For Each o In mOwners
+        If CStr(o.Item("kind")) = "para" Then
+            If CLng(o.Item("line")) >= secLo And CLng(o.Item("line")) <= secHi Then
+                names = names & CStr(o.Item("name")) & ","
             End If
         End If
     Next o
     Dim callers As String, e As OrderedDict, nHit As Long
     callers = ""
-    If Len(secName) > 0 And Not callG Is Nothing Then
+    If Not callG Is Nothing Then
         If callG.Exists("edges") Then
             For Each e In callG.Item("edges")
-                If UCase$(CStr(e.Item("to"))) = secName And Left$(CStr(e.Item("kind")), 7) = "perform" Then
+                ' self-references from inside the dead region do not count
+                If CLng(e.Item("line")) >= secLo And CLng(e.Item("line")) <= secHi Then
+                    ' skip
+                ElseIf InStr(names, "," & UCase$(CStr(e.Item("to"))) & ",") > 0 And _
+                   Left$(CStr(e.Item("kind")), 7) = "perform" Then
                     If InStr("," & callers & ",", "," & CStr(e.Item("from")) & ",") = 0 Then
                         nHit = nHit + 1
                         If nHit <= 3 Then
@@ -2052,7 +2110,40 @@ Private Function NoCtxDetail_(ByVal lineNo As Long, ByVal callG As OrderedDict) 
             Next e
         End If
     End If
-    NoCtxDetail_ = secName & "|" & callers
+    ' no graph edge: quote the source lines that reference the name
+    Dim refs As String, le As OrderedDict, txt As String, p As Long, ch As String
+    Dim nRef As Long, hit As Boolean, q As String
+    refs = ""
+    If Len(callers) = 0 Then
+        For Each le In lines
+            If CLng(le.Item("Number")) < secLo Or CLng(le.Item("Number")) > secHi Then
+                txt = UCase$(CStr(le.Item("Text")))
+                ' token-boundary match on both sides, any occurrence
+                hit = False
+                p = InStr(txt, secName)
+                Do While p > 0 And Not hit
+                    ch = Mid$(txt & " ", p + Len(secName), 1)
+                    If ch Like "[!A-Z0-9-]" Then
+                        If p = 1 Then
+                            hit = True
+                        ElseIf Mid$(txt, p - 1, 1) Like "[!A-Z0-9-]" Then
+                            hit = True
+                        End If
+                    End If
+                    If Not hit Then p = InStr(p + 1, txt, secName)
+                Loop
+                If hit Then
+                    q = Replace(Left$(CStr(le.Item("Text")), 45), "|", "/")
+                    q = Replace(q, "~", "-")
+                    If Len(refs) > 0 Then refs = refs & "~"
+                    refs = refs & "L" & CLng(le.Item("Number")) & ":" & q
+                    nRef = nRef + 1
+                    If nRef >= 2 Then Exit For
+                End If
+            End If
+        Next le
+    End If
+    NoCtxDetail_ = secName & "|" & callers & "|" & refs
 End Function
 
 Private Function OnStack_(ByVal stack As Collection, ByVal nm As String) As Boolean
