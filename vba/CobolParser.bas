@@ -382,7 +382,7 @@ Public Function Get_CobolAction(ByVal txt As String, ByVal lineNumber As Long) A
         Set rx = CreateObject("VBScript.RegExp")
         ' (?!-) keeps hyphenated paragraph names (INITIALIZE-RTN etc.) from
         ' matching as verbs - a verb is always followed by a space or line end.
-        rx.Pattern = "^(PERFORM|CALL|GO\s+TO|MOVE|COMPUTE|READ|WRITE|REWRITE|DELETE|STRING|INITIALIZE|ACCEPT|EXEC|GOBACK|STOP\s+RUN|EXIT\s+PROGRAM)\b(?!-)\s*(.*)$"
+        rx.Pattern = "^(PERFORM|CALL|GO\s+TO|MOVE|COMPUTE|ADD|SUBTRACT|MULTIPLY|DIVIDE|READ|WRITE|REWRITE|DELETE|STRING|INITIALIZE|ACCEPT|EXEC|GOBACK|STOP\s+RUN|EXIT\s+PROGRAM)\b(?!-)\s*(.*)$"
         rx.IgnoreCase = False
         Set rxSpaces = CreateObject("VBScript.RegExp")
         rxSpaces.Pattern = "\s+"

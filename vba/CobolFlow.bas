@@ -25,6 +25,7 @@ Attribute VB_Name = "CobolFlow"
 Option Explicit
 
 Private Const MAX_TRACES As Long = 200
+Private mGotoSeen As OrderedDict   ' GO TO targets followed in this walk (once each)
 Private mOps As Long   ' heartbeat counter: keep Excel responsive on big programs
 ' every cons node ever allocated this run - unlinked iteratively at the end,
 ' because letting VB tear down a long Prev chain recursively can blow the
@@ -205,7 +206,19 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
                     If CStr(w.Item("Term")) <> "" And Not CBool(w.Item("Missed")) Then
                         AddCand_ cands, covered, w
                     ElseIf CBool(w.Item("Missed")) And Len(mMissCond) > 0 Then
-                        mArmDiag.Add tok, "conflict|" & mMissCond
+                        ' annotate what steering had to work with
+                        Dim sfx As String
+                        sfx = "nosteer"
+                        If mArmSteer.Exists(tok) Then
+                            If Not SteerChain_(tok) Is Nothing Then
+                                sfx = "tried"
+                            ElseIf mUnsetCtx.Exists(CStr(mArmSteer.Item(tok).Item("Item"))) Then
+                                sfx = "tried"
+                            Else
+                                sfx = "nosite"
+                            End If
+                        End If
+                        mArmDiag.Add tok, "conflict|" & mMissCond & "|" & sfx
                     Else
                         mArmDiag.Add tok, "dead"
                     End If
@@ -339,6 +352,7 @@ Private Function TryWalk_(ByVal token As String, ByVal prefElse As Boolean, _
     mCurTok = token
     mSweep = False
     mHavocItem = havocItem
+    Set mGotoSeen = New OrderedDict
     Set mReplayList = Nothing
 
     Dim res As OrderedDict
@@ -357,6 +371,7 @@ Private Function SweepWalk_(ByVal entry As OrderedDict, ByVal secLabels As Order
     mPrefElse = False
     mMissed = False
     mCurTok = ""
+    Set mGotoSeen = New OrderedDict
     Set mReplayList = Nothing
     mSweep = True
     Dim res As OrderedDict
@@ -374,6 +389,7 @@ Private Function ReplayWalk_(ByVal armSeq As Collection, ByVal entry As OrderedD
     mMissed = False
     mCurTok = ""
     mSweep = False
+    Set mGotoSeen = New OrderedDict
     Set mReplayList = armSeq
     mReplayIdx = 1
     Set ReplayWalk_ = RunWalk_(entry, secLabels)
@@ -523,6 +539,16 @@ Private Sub RegisterAssign_(ByVal lbl As String, ByVal ctx As Collection)
         rxMA.IgnoreCase = False
     End If
     Dim m As Object, dts() As String, i As Long, k As String
+    ' arithmetic targets become unknown - register as unset sites
+    If Left$(lbl, 4) = "ADD " Or Left$(lbl, 9) = "SUBTRACT " Or _
+       Left$(lbl, 9) = "MULTIPLY " Or Left$(lbl, 7) = "DIVIDE " Then
+        Dim ac As Collection, avv As Variant
+        Set ac = ArithTargets_(lbl)
+        For Each avv In ac
+            If Not mUnsetCtx.Exists(CStr(avv)) Then mUnsetCtx.Add CStr(avv), CopyCtx_(ctx)
+        Next avv
+        Exit Sub
+    End If
     If Left$(lbl, 11) = "INITIALIZE " Then
         k = Trim$(Mid$(lbl, 12))
         i = InStr(k, " ")
@@ -649,9 +675,28 @@ Private Sub CtxWalk_(ByVal list As Collection, ByVal stack As Collection, ByVal 
             Next si
         ElseIf t = "action" Then
             CtxPerform_ CStr(n.Item("label")), stack, ctx
+            CtxGoTo_ CStr(n.Item("label")), stack, ctx
             RegisterAssign_ CStr(n.Item("label")), ctx
         End If
     Next n
+End Sub
+
+' follow a GO TO target once during the context walk so arms and
+' assignment sites beyond exit-jumps are still discovered
+Private Sub CtxGoTo_(ByVal lbl As String, ByVal stack As Collection, ByVal ctx As Collection)
+    If Left$(lbl, 6) <> "GO TO " Then Exit Sub
+    Dim tgt As String
+    tgt = Mid$(lbl, 7)
+    If InStr(tgt, " ") > 0 Then Exit Sub
+    If mCtxVisited.Exists(tgt) Then Exit Sub
+    If OnStack_(stack, tgt) Then Exit Sub
+    Dim ox As OrderedDict
+    Set ox = OwnerByName_(tgt)
+    If ox Is Nothing Then Exit Sub
+    mCtxVisited.Add tgt, True
+    stack.Add tgt
+    CtxWalk_ RangeNodes_(CLng(ox.Item("line")), CLng(ox.Item("secEnd"))), stack, ctx
+    stack.Remove stack.Count
 End Sub
 
 ' parse "PERFORM tgt [THRU y] [loop tail]" - True when the body should be
@@ -1437,6 +1482,8 @@ Private Function ApplyOne_(ByVal node As OrderedDict, ByVal stack As Collection,
     For Each tr In traces
         If CStr(tr.Item("Term")) <> "" Then
             AddCapped_ out, tr
+        ElseIf TrSkips_(tr) Then
+            AddCapped_ out, tr   ' control jumped away - pass through
         ElseIf t = "action" Then
             ApplyAction_ node, stack, tr, out, secLabels
         ElseIf t = "if" Then
@@ -1586,20 +1633,79 @@ End Function
 
 ' default arm preference: THEN-first (ELSE-first for the prefElse seed),
 ' flipped when the preferred arm runs straight into an ABEND terminator
+' or jumps away (GO TO) - unsteered walks should keep flowing forward
 Private Function DefaultArm_(ByVal node As OrderedDict, ByVal okT As Boolean, ByVal okE As Boolean) As String
     DefaultArm_ = ""
-    Dim prefT As Boolean
+    Dim prefT As Boolean, badT As Boolean, badE As Boolean
+    badT = BlockAbends_(node.Item("thenChildren")) Or BlockJumps_(node.Item("thenChildren"))
+    badE = BlockAbends_(node.Item("elseChildren")) Or BlockJumps_(node.Item("elseChildren"))
     prefT = Not mPrefElse
     If prefT Then
-        If BlockAbends_(node.Item("thenChildren")) And Not BlockAbends_(node.Item("elseChildren")) Then prefT = False
+        If badT And Not badE Then prefT = False
     Else
-        If BlockAbends_(node.Item("elseChildren")) And Not BlockAbends_(node.Item("thenChildren")) Then prefT = True
+        If badE And Not badT Then prefT = True
     End If
     If prefT Then
         If okT Then DefaultArm_ = "T" Else If okE Then DefaultArm_ = "E"
     Else
         If okE Then DefaultArm_ = "E" Else If okT Then DefaultArm_ = "T"
     End If
+End Function
+
+' does a branch body jump away (top-level GO TO)?
+Private Function BlockJumps_(ByVal list As Collection) As Boolean
+    Dim n As OrderedDict
+    BlockJumps_ = False
+    For Each n In list
+        If CStr(n.Item("type")) = "action" Then
+            If Left$(CStr(n.Item("label")), 6) = "GO TO " Then
+                BlockJumps_ = True
+                Exit Function
+            End If
+        End If
+    Next n
+End Function
+
+' assignment targets of an arithmetic verb (ADD/SUBTRACT/MULTIPLY/DIVIDE):
+' tokens after GIVING when present, else after TO / FROM / INTO; REMAINDER
+' targets included, ROUNDED keywords skipped
+Private Function ArithTargets_(ByVal lbl As String) As Collection
+    Dim c As Collection
+    Set c = New Collection
+    Set ArithTargets_ = c
+    Dim p As Long, tail As String
+    p = InStr(lbl, " GIVING ")
+    If p > 0 Then
+        tail = Mid$(lbl, p + 8)
+    ElseIf Left$(lbl, 4) = "ADD " Then
+        p = InStr(lbl, " TO ")
+        If p = 0 Then Exit Function
+        tail = Mid$(lbl, p + 4)
+    ElseIf Left$(lbl, 9) = "SUBTRACT " Then
+        p = InStr(lbl, " FROM ")
+        If p = 0 Then Exit Function
+        tail = Mid$(lbl, p + 6)
+    ElseIf Left$(lbl, 9) = "MULTIPLY " Then
+        p = InStr(lbl, " BY ")
+        If p = 0 Then Exit Function
+        tail = Mid$(lbl, p + 4)
+    ElseIf Left$(lbl, 7) = "DIVIDE " Then
+        p = InStr(lbl, " INTO ")
+        If p = 0 Then Exit Function
+        tail = Mid$(lbl, p + 6)
+    Else
+        Exit Function
+    End If
+    Dim toks() As String, i As Long, t As String
+    toks = Split(Trim$(tail), " ")
+    For i = LBound(toks) To UBound(toks)
+        t = Trim$(toks(i))
+        If t = "ROUNDED" Or t = "REMAINDER" Or Len(t) = 0 Then
+            ' skip keywords; REMAINDER's operand is collected next round
+        ElseIf Not t Like "*[!A-Z0-9-]*" And Not t Like "#*" Then
+            c.Add t
+        End If
+    Next i
 End Function
 
 Private Sub AddCapped_(ByVal out As Collection, ByVal tr As OrderedDict)
@@ -1642,7 +1748,8 @@ Private Sub ApplyAction_(ByVal node As OrderedDict, ByVal stack As Collection, B
     Dim v1 As String
     v1 = Left$(lbl & " ", InStr(lbl & " ", " "))
     Select Case v1
-        Case "PERFORM ", "CALL ", "MOVE ", "COMPUTE ", "STRING ", "INITIALIZE ", "ACCEPT "
+        Case "PERFORM ", "CALL ", "MOVE ", "COMPUTE ", "STRING ", "INITIALIZE ", "ACCEPT ", _
+             "GO ", "ADD ", "SUBTRACT ", "MULTIPLY ", "DIVIDE "
             ' fall through to the verb handlers below
         Case Else
             If Left$(lbl, 5) = "EXEC " Then
@@ -1661,6 +1768,56 @@ Private Sub ApplyAction_(ByVal node As OrderedDict, ByVal stack As Collection, B
             PerformInto_ pTgt, pThru, node, stack, tr, out, secLabels
             Exit Sub
         End If
+    End If
+
+    ' GO TO <name>: forward exit-jump (Natural ESCAPE BOTTOM conversion
+    ' style) - walk the target through its SECTION end (fall-through),
+    ' then skip the rest of the current statement list. DEPENDING ON and
+    ' unresolved targets stay generic actions.
+    If v1 = "GO " Then
+        If Left$(lbl, 6) = "GO TO " Then
+            Dim gTgt As String
+            gTgt = Mid$(lbl, 7)
+            If InStr(gTgt, " ") = 0 Then
+                Dim gOx As OrderedDict
+                Set gOx = OwnerByName_(gTgt)
+                If Not gOx Is Nothing Then
+                    If Not mGotoSeen.Exists(gTgt) And Not OnStack_(stack, gTgt) Then
+                        mGotoSeen.Add gTgt, True
+                        AddEvent_ tr, "action", lbl, ln
+                        Dim gSeed As Collection, gSubs As Collection, gSb As OrderedDict
+                        Set gSeed = New Collection
+                        gSeed.Add tr
+                        stack.Add gTgt
+                        Set gSubs = ApplyRange_(CLng(gOx.Item("line")), CLng(gOx.Item("secEnd")), stack, gSeed, secLabels)
+                        stack.Remove stack.Count
+                        For Each gSb In gSubs
+                            gSb.Add "SkipRest", True   ' control was transferred
+                            AddCapped_ out, gSb
+                        Next gSb
+                        Exit Sub
+                    End If
+                End If
+            End If
+        End If
+        AddEvent_ tr, "action", lbl, ln
+        AddCapped_ out, tr
+        Exit Sub
+    End If
+
+    ' arithmetic verbs change their targets - invalidate (and surface as
+    ' computed assigns); without this a MOVE ZERO + ADD 1 counter keeps
+    ' the stale constant and falsely prunes both arms of later tests
+    If v1 = "ADD " Or v1 = "SUBTRACT " Or v1 = "MULTIPLY " Or v1 = "DIVIDE " Then
+        Dim ats As Collection, av As Variant
+        Set ats = ArithTargets_(lbl)
+        For Each av In ats
+            AddAssignEvent_ tr, CStr(av), lbl, "compute", ln
+            Invalidate_ tr.Item("Env"), CStr(av)
+        Next av
+        If ats.Count = 0 Then AddEvent_ tr, "action", lbl, ln
+        AddCapped_ out, tr
+        Exit Sub
     End If
 
     ' CALL
@@ -1824,9 +1981,17 @@ Private Sub PerformInto_(ByVal fromName As String, ByVal thruName As String, ByV
     Set subs = ApplyRange_(CLng(ox.Item("line")), hi, stack, seed, secLabels)
     stack.Remove stack.Count
     For Each sb In subs
+        ' a GO TO inside the callee ended at its section exit - control
+        ' returns to this caller, so the skip flag is cleared here
+        If TrSkips_(sb) Then sb.Add "SkipRest", False
         AddCapped_ out, sb
     Next sb
 End Sub
+
+Private Function TrSkips_(ByVal tr As OrderedDict) As Boolean
+    TrSkips_ = False
+    If tr.Exists("SkipRest") Then TrSkips_ = CBool(tr.Item("SkipRest"))
+End Function
 
 Private Function OnStack_(ByVal stack As Collection, ByVal nm As String) As Boolean
     Dim v As Variant

@@ -169,7 +169,22 @@ Private Function DiagJp_(ByVal flow As OrderedDict, ByVal token As String) As St
     If c = "noctx" Then
         DiagJp_ = "｜経路なし（PERFORM 未到達領域）"
     ElseIf Left$(c, 9) = "conflict|" Then
-        DiagJp_ = "｜値競合: " & Mid$(c, 10) & " を強制できず（定数伝播）"
+        Dim body As String, q As Long, sfxJp As String
+        body = Mid$(c, 10)
+        q = InStrRev(body, "|")
+        sfxJp = ""
+        If q > 0 Then
+            Select Case Mid$(body, q + 1)
+                Case "tried"
+                    sfxJp = "・転向/havoc 試行済"
+                Case "nosite"
+                    sfxJp = "・設値点なし"
+                Case "nosteer"
+                    sfxJp = "・転向情報なし（複合条件等）"
+            End Select
+            If Len(sfxJp) > 0 Then body = Left$(body, q - 1)
+        End If
+        DiagJp_ = "｜値競合: " & body & " を強制できず（定数伝播" & sfxJp & "）"
     ElseIf c = "dead" Then
         DiagJp_ = "｜経路構築不可"
     End If

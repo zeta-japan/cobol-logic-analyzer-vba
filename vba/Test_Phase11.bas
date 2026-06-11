@@ -15,6 +15,69 @@ Public Sub Run_All()
     TestRunner.Run_One "Test_Flow_UnsetSteer"
     TestRunner.Run_One "Test_Flow_ReadAheadIf"
     TestRunner.Run_One "Test_Flow_ReadAheadEval"
+    TestRunner.Run_One "Test_Flow_ArithAndGoto"
+End Sub
+
+' (a) arithmetic verbs invalidate their targets - a MOVE ZERO + ADD 1
+' counter must not keep the stale constant (it falsely pruned both arms
+' of later tests); (b) GO TO <name> is followed as a forward exit-jump
+' (Natural ESCAPE BOTTOM conversion style), so arms beyond/inside the
+' jump target are reachable; default arms avoid jump-away branches.
+' ver4 oracle (BIGCASE5): 6 arms, all covered, 4 cases.
+Public Sub Test_Flow_ArithAndGoto()
+    Dim s As String
+    s = ""
+    s = s & "       WORKING-STORAGE SECTION." & vbLf
+    s = s & "       01  C-NUM   PIC 9(03)." & vbLf
+    s = s & "       01  W-ERR   PIC X(01)." & vbLf
+    s = s & "       01  W-FIN   PIC X(01)." & vbLf
+    s = s & "       01  W-OUT   PIC X(02)." & vbLf
+    s = s & "       PROCEDURE DIVISION." & vbLf
+    s = s & "       MAIN-PROC SECTION." & vbLf
+    s = s & "       MAIN-000." & vbLf
+    s = s & "           MOVE ZERO TO C-NUM." & vbLf
+    s = s & "           PERFORM PROC-SEC." & vbLf
+    s = s & "           PERFORM TAIL-SEC." & vbLf
+    s = s & "           GOBACK." & vbLf
+    s = s & "       PROC-SEC SECTION." & vbLf
+    s = s & "       PROC-000." & vbLf
+    s = s & "           ADD 1 TO C-NUM." & vbLf
+    s = s & "           IF W-ERR = '1'" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               GO TO EXIT-SEC" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               CONTINUE" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "           IF C-NUM NOT = 0" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               MOVE 'CC' TO W-OUT" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               MOVE 'DD' TO W-OUT" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "       PROC-999." & vbLf
+    s = s & "           EXIT." & vbLf
+    s = s & "       EXIT-SEC SECTION." & vbLf
+    s = s & "       EXITS-000." & vbLf
+    s = s & "           IF W-FIN = '9'" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               MOVE 'EE' TO W-OUT" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               MOVE 'FF' TO W-OUT" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "       EXITS-999." & vbLf
+    s = s & "           EXIT." & vbLf
+    s = s & "       TAIL-SEC SECTION." & vbLf
+    s = s & "       TAIL-000." & vbLf
+    s = s & "           MOVE 'TT' TO W-OUT." & vbLf
+    s = s & "       TAIL-999." & vbLf
+    s = s & "           EXIT." & vbLf
+
+    Dim flow As OrderedDict
+    Set flow = CobolFlow.Analyze_Flow(s, New Collection)
+    TestRunner.Assert_Equal CLng(6), CLng(flow.Item("arms").Count), "arith+goto: 6 arms"
+    TestRunner.Assert_Equal CLng(0), CLng(UncovCount_(flow)), _
+        "counter arms unpruned + arms beyond GO TO reachable: all covered"
+    TestRunner.Assert_Equal CLng(4), CLng(flow.Item("cases").Count), "arith+goto: 4 cases"
 End Sub
 
 ' read-ahead loop idiom: the flag is initialized to a literal and the real
