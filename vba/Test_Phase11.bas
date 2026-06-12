@@ -20,6 +20,21 @@ Public Sub Run_All()
     TestRunner.Run_One "Test_Flow_BlockerSteer"
     TestRunner.Run_One "Test_Flow_BlockerSteerEval"
     TestRunner.Run_One "Test_Flow_ArmMeta"
+    TestRunner.Run_One "Test_Xdm_CondJp"
+End Sub
+
+' template-JP condition translation: operators replaced, identifiers
+' and literals preserved (the JP words themselves are checked by eye -
+' this file is ASCII, so assertions are structural)
+Public Sub Test_Xdm_CondJp()
+    Dim r As String
+    r = CobolXdm.CondJp_("W-PA210 = '97' OR LINNM5P1-LINNM5PA210 = '99000010'")
+    TestRunner.Assert_True InStr(r, " OR ") = 0, "OR translated away"
+    TestRunner.Assert_True InStr(r, "'97'") > 0, "literal preserved"
+    TestRunner.Assert_True InStr(r, "W-PA210") = 1, "item name preserved at head"
+    r = CobolXdm.CondJp_("DT1 NOT = 0 AND DT2 NOT = 0")
+    TestRunner.Assert_True InStr(r, " AND ") = 0, "AND translated away"
+    TestRunner.Assert_True InStr(r, "NOT") = 0, "NOT= folded into one operator"
 End Sub
 
 ' ver3.3 deliverable plumbing on the BlockerSteer fixture: arms carry
