@@ -48,7 +48,7 @@ Public Sub RebuildVbaProject()
                   "CobolEncoding.bas", "CobolParser.bas", "CobolCalls.bas", "CobolData.bas", _
                   "CobolDiagram.bas", "CobolDataView.bas", "CobolStub.bas", _
                   "CobolTcMark.bas", "CobolExecTree.bas", _
-                  "CobolFlow.bas", "CobolCaseView.bas", "CobolIoView.bas", _
+                  "CobolFlow.bas", "CobolCaseView.bas", "CobolXdm.bas", "CobolIoView.bas", _
                   "CobolLogicViewer.bas", "Main.bas", "TestRunner.bas", _
                   "Test_Phase1.bas", "Test_Phase2.bas", "Test_Phase3.bas", _
                   "Test_Phase4.bas", "Test_Phase5.bas", "Test_Phase6.bas", _

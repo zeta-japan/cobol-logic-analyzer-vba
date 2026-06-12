@@ -283,26 +283,28 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
     hdr = 4
     ws.Cells(hdr, 1).Value = "検証Point（分岐アーム）"
     ws.Cells(hdr, 2).Value = "行"
+    ws.Cells(hdr, 3).Value = "SECTION"
     Dim ci As Long, c As OrderedDict
     ci = 0
     For Each c In cases
         ci = ci + 1
-        ws.Cells(hdr, 2 + ci).Value = CStr(c.Item("id"))
+        ws.Cells(hdr, 3 + ci).Value = CStr(c.Item("id"))
     Next c
     ' column header: dark blue band, white text; TC numbers centered
-    With ws.Range(ws.Cells(hdr, 1), ws.Cells(hdr, 2 + cases.Count))
+    With ws.Range(ws.Cells(hdr, 1), ws.Cells(hdr, 3 + cases.Count))
         .Font.Bold = True
         .Font.Color = RGB(255, 255, 255)
         .Interior.Color = RGB(46, 91, 143)
     End With
-    ws.Range(ws.Cells(hdr, 2), ws.Cells(hdr, 2 + cases.Count)).HorizontalAlignment = xlCenter
+    ws.Range(ws.Cells(hdr, 2), ws.Cells(hdr, 3 + cases.Count)).HorizontalAlignment = xlCenter
 
     Dim row As Long, a As OrderedDict, hit As Boolean, anyHit As Boolean, v As Variant
+    Dim curSec As String
     row = hdr + 1
     For Each a In flow.Item("arms")
         ' zebra banding on alternate rows (overridden by the red NG fill)
         If ((row - hdr) Mod 2) = 0 Then
-            ws.Range(ws.Cells(row, 1), ws.Cells(row, 2 + cases.Count)).Interior.Color = RGB(242, 244, 247)
+            ws.Range(ws.Cells(row, 1), ws.Cells(row, 3 + cases.Count)).Interior.Color = RGB(242, 244, 247)
         End If
         ws.Cells(row, 1).Value = CStr(a.Item("Disp"))
         On Error Resume Next
@@ -314,6 +316,9 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
             Err.Clear
         End If
         On Error GoTo 0
+        curSec = SectionOf_(flow, CLng(a.Item("Line")))
+        ws.Cells(row, 3).Value = curSec
+        ws.Cells(row, 3).Font.Size = 9
 
         anyHit = False
         ci = 0
@@ -324,15 +329,15 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
                 If CStr(v) = CStr(a.Item("Token")) Then hit = True
             Next v
             If hit Then
-                ws.Cells(row, 2 + ci).Value = ChrW$(&H25CB)
-                ws.Cells(row, 2 + ci).HorizontalAlignment = xlCenter
+                ws.Cells(row, 3 + ci).Value = ChrW$(&H25CB)
+                ws.Cells(row, 3 + ci).HorizontalAlignment = xlCenter
                 anyHit = True
             End If
         Next c
         If Not anyHit Then
-            ws.Range(ws.Cells(row, 1), ws.Cells(row, 2 + cases.Count)).Interior.Color = RGB(255, 199, 206)
-            ws.Cells(row, 2 + cases.Count + 1).Value = "未カバー" & DiagJp_(flow, CStr(a.Item("Token")))
-            ws.Cells(row, 2 + cases.Count + 1).Font.Color = RGB(192, 0, 0)
+            ws.Range(ws.Cells(row, 1), ws.Cells(row, 3 + cases.Count)).Interior.Color = RGB(255, 199, 206)
+            ws.Cells(row, 3 + cases.Count + 1).Value = "未カバー" & DiagJp_(flow, CStr(a.Item("Token")))
+            ws.Cells(row, 3 + cases.Count + 1).Font.Color = RGB(192, 0, 0)
         End If
         row = row + 1
     Next a
@@ -344,7 +349,7 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
             .HorizontalAlignment = xlCenter
         End With
         ' full grid (one range-level call - cheap regardless of row count)
-        With ws.Range(ws.Cells(hdr, 1), ws.Cells(row - 1, 2 + cases.Count)).Borders
+        With ws.Range(ws.Cells(hdr, 1), ws.Cells(row - 1, 3 + cases.Count)).Borders
             .LineStyle = xlContinuous
             .Color = RGB(184, 188, 196)
             .Weight = xlThin
@@ -361,9 +366,9 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
     For Each c In cases
         ci = ci + 1
         If CStr(c.Item("kind")) = "normal" Then
-            ws.Cells(row, 2 + ci).Value = "正常"
+            ws.Cells(row, 3 + ci).Value = "正常"
         Else
-            ws.Cells(row, 2 + ci).Value = "異常"
+            ws.Cells(row, 3 + ci).Value = "異常"
         End If
     Next c
     row = row + 1
@@ -372,8 +377,8 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
     ci = 0
     For Each c In cases
         ci = ci + 1
-        ws.Cells(row, 2 + ci).Value = TermJp_(c)
-        ws.Cells(row, 2 + ci).Font.Size = 9
+        ws.Cells(row, 3 + ci).Value = TermJp_(c)
+        ws.Cells(row, 3 + ci).Font.Size = 9
     Next c
     row = row + 1
     ws.Cells(row, 1).Value = "対象"
@@ -382,26 +387,39 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
     For Each c In cases
         ci = ci + 1
         If CStr(c.Item("kind")) = "normal" Then
-            ws.Cells(row, 2 + ci).Value = "テスト対象"
+            ws.Cells(row, 3 + ci).Value = "テスト対象"
         Else
-            ws.Cells(row, 2 + ci).Value = "機上確認"
-            ws.Cells(row, 2 + ci).Font.Color = RGB(120, 120, 120)
+            ws.Cells(row, 3 + ci).Value = "機上確認"
+            ws.Cells(row, 3 + ci).Font.Color = RGB(120, 120, 120)
         End If
     Next c
 
     ' footer block: light gray band + centered values + grid
-    With ws.Range(ws.Cells(ftrTop, 1), ws.Cells(row, 2 + cases.Count))
+    With ws.Range(ws.Cells(ftrTop, 1), ws.Cells(row, 3 + cases.Count))
         .Interior.Color = RGB(231, 233, 236)
         .Borders.LineStyle = xlContinuous
         .Borders.Color = RGB(184, 188, 196)
         .Borders.Weight = xlThin
     End With
-    ws.Range(ws.Cells(ftrTop, 3), ws.Cells(row, 2 + cases.Count)).HorizontalAlignment = xlCenter
+    ws.Range(ws.Cells(ftrTop, 4), ws.Cells(row, 3 + cases.Count)).HorizontalAlignment = xlCenter
 
     ws.Columns("A").ColumnWidth = 56
     ws.Columns("B").ColumnWidth = 6
+    ws.Columns("C").ColumnWidth = 18
     Dim k As Long
     For k = 1 To cases.Count + 1
-        ws.Columns(2 + k).ColumnWidth = 12
+        ws.Columns(3 + k).ColumnWidth = 12
     Next k
 End Sub
+
+' owning SECTION of a source line (from the flow result's section ranges)
+Private Function SectionOf_(ByVal flow As OrderedDict, ByVal lineNo As Long) As String
+    SectionOf_ = ""
+    If Not flow.Exists("sections") Then Exit Function
+    Dim s As OrderedDict
+    For Each s In flow.Item("sections")
+        If CLng(s.Item("line")) <= lineNo And lineNo <= CLng(s.Item("secEnd")) Then
+            SectionOf_ = CStr(s.Item("name"))
+        End If
+    Next s
+End Function

@@ -19,9 +19,58 @@ Public Sub Run_All()
     TestRunner.Run_One "Test_Flow_CallArgUnset"
     TestRunner.Run_One "Test_Flow_BlockerSteer"
     TestRunner.Run_One "Test_Flow_BlockerSteerEval"
+    TestRunner.Run_One "Test_Flow_ArmMeta"
 End Sub
 
-' the production shape behind the ????? red rows: a compound-cond
+' ver3.3 deliverable plumbing on the BlockerSteer fixture: arms carry
+' MarkLine (first statement INSIDE the arm - where Besshi-1 marks the TC),
+' the result exposes the SECTION ranges, and CobolXdm.BuildTcMap maps
+' every covered arm to the FIRST covering case.
+' Fixture lines: if-14 (W-EOF gate): then arm = CONTINUE only (no AST
+' node -> MarkLine falls back to the branch line 14), else-child
+' PERFORM=18; if-20 (F-MAS1): then-child inner if=22 (else arm is
+' CONTINUE-only -> falls back to 20, not pinned);
+' if-22 (compound): then MOVE=24, else MOVE=26. Sections: MAIN-PROC=11,
+' READ-SEC=32.
+Public Sub Test_Flow_ArmMeta()
+    Dim flow As OrderedDict
+    Set flow = CobolFlow.Analyze_Flow(BlockerSteerSrc_(), New Collection)
+
+    Dim a As OrderedDict, mk As OrderedDict
+    Set mk = New OrderedDict
+    For Each a In flow.Item("arms")
+        mk.Add CStr(a.Item("Token")), CLng(a.Item("MarkLine"))
+    Next a
+    TestRunner.Assert_Equal CLng(14), CLng(mk.Item("if-14:then")), "CONTINUE-only arm marks at the branch line (no AST node)"
+    TestRunner.Assert_Equal CLng(18), CLng(mk.Item("if-14:else")), "else arm marks at first inner statement"
+    TestRunner.Assert_Equal CLng(22), CLng(mk.Item("if-20:then")), "nested-if arm marks at the inner IF line"
+    TestRunner.Assert_Equal CLng(26), CLng(mk.Item("if-22:else")), "compound-cond else marks at its MOVE"
+
+    Dim secs As Collection
+    Set secs = flow.Item("sections")
+    TestRunner.Assert_Equal CLng(2), CLng(secs.Count), "two sections exported"
+    TestRunner.Assert_Equal "MAIN-PROC", CStr(secs(1).Item("name")), "first section name"
+    TestRunner.Assert_Equal CLng(11), CLng(secs(1).Item("line")), "first section start line"
+
+    Dim map As OrderedDict, v As Variant, ok As Boolean
+    Set map = CobolXdm.BuildTcMap(flow)
+    For Each a In flow.Item("arms")
+        TestRunner.Assert_True map.Exists(CStr(a.Item("Token"))), "every covered arm mapped: " & CStr(a.Item("Token"))
+        ' consistency: the mapped case really contains the token
+        Dim c As OrderedDict
+        ok = False
+        For Each c In flow.Item("cases")
+            If CStr(c.Item("id")) = CStr(map.Item(CStr(a.Item("Token")))) Then
+                For Each v In c.Item("arms")
+                    If CStr(v) = CStr(a.Item("Token")) Then ok = True
+                Next v
+            End If
+        Next c
+        TestRunner.Assert_True ok, "mapped case covers the token: " & CStr(a.Item("Token"))
+    Next a
+End Sub
+
+' the production shape behind the compound-condition red rows: a
 ' IF nested under EVALUATE WHEN 'D', flag initialized to space, only
 ' setter a GATED group MOVE. Fallback walks for the inner arms conflict
 ' AT the EVALUATE (mMissTok = when-D id), the target has no steer of its
@@ -88,43 +137,7 @@ End Sub
 ' ver4 oracle (BIGCASE7): 6 arms, all covered, 4 normal paths, 3 cases.
 Public Sub Test_Flow_BlockerSteer()
     Dim s As String
-    s = ""
-    s = s & "       WORKING-STORAGE SECTION." & vbLf
-    s = s & "       01  FD-REC  PIC X(02)." & vbLf
-    s = s & "       01  W-WK." & vbLf
-    s = s & "           03  F-MAS1  PIC X(01)." & vbLf
-    s = s & "           03  F-OTH   PIC X(01)." & vbLf
-    s = s & "       01  DT1     PIC 9(03)." & vbLf
-    s = s & "       01  DT2     PIC 9(03)." & vbLf
-    s = s & "       01  W-OUT   PIC X(02)." & vbLf
-    s = s & "       01  W-EOF   PIC X(01)." & vbLf
-    s = s & "       PROCEDURE DIVISION." & vbLf
-    s = s & "       MAIN-PROC SECTION." & vbLf
-    s = s & "       MAIN-000." & vbLf
-    s = s & "           MOVE ' ' TO F-MAS1." & vbLf
-    s = s & "           IF W-EOF = '1'" & vbLf
-    s = s & "           THEN" & vbLf
-    s = s & "               CONTINUE" & vbLf
-    s = s & "           ELSE" & vbLf
-    s = s & "               PERFORM READ-SEC" & vbLf
-    s = s & "           END-IF." & vbLf
-    s = s & "           IF F-MAS1 = 'D'" & vbLf
-    s = s & "           THEN" & vbLf
-    s = s & "               IF DT1 NOT = 0 AND DT2 NOT = 0" & vbLf
-    s = s & "               THEN" & vbLf
-    s = s & "                   MOVE 'AA' TO W-OUT" & vbLf
-    s = s & "               ELSE" & vbLf
-    s = s & "                   MOVE 'BB' TO W-OUT" & vbLf
-    s = s & "               END-IF" & vbLf
-    s = s & "           ELSE" & vbLf
-    s = s & "               CONTINUE" & vbLf
-    s = s & "           END-IF." & vbLf
-    s = s & "           GOBACK." & vbLf
-    s = s & "       READ-SEC SECTION." & vbLf
-    s = s & "       READS-000." & vbLf
-    s = s & "           MOVE FD-REC TO W-WK." & vbLf
-    s = s & "       READS-999." & vbLf
-    s = s & "           EXIT." & vbLf
+    s = BlockerSteerSrc_()
 
     Dim flow As OrderedDict
     Set flow = CobolFlow.Analyze_Flow(s, New Collection)
@@ -585,4 +598,47 @@ Private Function HasArm_(ByVal c As OrderedDict, ByVal token As String) As Boole
     For Each v In c.Item("arms")
         If CStr(v) = token Then HasArm_ = True
     Next v
+End Function
+
+' shared fixture for BlockerSteer / ArmMeta (line numbers pinned)
+Private Function BlockerSteerSrc_() As String
+    Dim s As String
+    s = ""
+    s = s & "       WORKING-STORAGE SECTION." & vbLf
+    s = s & "       01  FD-REC  PIC X(02)." & vbLf
+    s = s & "       01  W-WK." & vbLf
+    s = s & "           03  F-MAS1  PIC X(01)." & vbLf
+    s = s & "           03  F-OTH   PIC X(01)." & vbLf
+    s = s & "       01  DT1     PIC 9(03)." & vbLf
+    s = s & "       01  DT2     PIC 9(03)." & vbLf
+    s = s & "       01  W-OUT   PIC X(02)." & vbLf
+    s = s & "       01  W-EOF   PIC X(01)." & vbLf
+    s = s & "       PROCEDURE DIVISION." & vbLf
+    s = s & "       MAIN-PROC SECTION." & vbLf
+    s = s & "       MAIN-000." & vbLf
+    s = s & "           MOVE ' ' TO F-MAS1." & vbLf
+    s = s & "           IF W-EOF = '1'" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               CONTINUE" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               PERFORM READ-SEC" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "           IF F-MAS1 = 'D'" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               IF DT1 NOT = 0 AND DT2 NOT = 0" & vbLf
+    s = s & "               THEN" & vbLf
+    s = s & "                   MOVE 'AA' TO W-OUT" & vbLf
+    s = s & "               ELSE" & vbLf
+    s = s & "                   MOVE 'BB' TO W-OUT" & vbLf
+    s = s & "               END-IF" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               CONTINUE" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "           GOBACK." & vbLf
+    s = s & "       READ-SEC SECTION." & vbLf
+    s = s & "       READS-000." & vbLf
+    s = s & "           MOVE FD-REC TO W-WK." & vbLf
+    s = s & "       READS-999." & vbLf
+    s = s & "           EXIT." & vbLf
+    BlockerSteerSrc_ = s
 End Function

@@ -175,8 +175,9 @@ Private Sub RenderHierarchy(ws As Worksheet, root As Object)
     ws.Cells(row, 1).Value = "階層ツリー"
     ws.Cells(row, 2).Value = "開始行"
     ws.Cells(row, 3).Value = "種別"
-    ws.Range(ws.Cells(row, 1), ws.Cells(row, 3)).Font.Bold = True
-    ws.Range(ws.Cells(row, 1), ws.Cells(row, 3)).Interior.Color = C_HEADER
+    ws.Cells(row, 4).Value = "TC"
+    ws.Range(ws.Cells(row, 1), ws.Cells(row, 4)).Font.Bold = True
+    ws.Range(ws.Cells(row, 1), ws.Cells(row, 4)).Interior.Color = C_HEADER
     row = row + 1
 
     Dim treeStart As Long
@@ -275,6 +276,9 @@ Private Sub RenderNode(ws As Worksheet, node As Object, ByVal prefix As String, 
     On Error GoTo 0
 
     ws.Cells(row, 3).Value = kind
+    ' arm rows carry their flow-arm token in a helper column; a post-pass
+    ' (CobolXdm.ApplyTreeTc) maps tokens to TC numbers and clears it
+    If t = "when" Then ws.Cells(row, 6).Value = CStr(node("id"))
     If t <> "action" Then
         ws.Range(ws.Cells(row, 1), ws.Cells(row, 3)).Interior.Color = C_BRANCH
     End If
@@ -284,9 +288,9 @@ Private Sub RenderNode(ws As Worksheet, node As Object, ByVal prefix As String, 
         Case "if"
             Dim elseCount As Long
             elseCount = node("elseChildren").Count
-            RenderBranchGroup ws, "[THEN]", node("thenChildren"), childPrefix, (elseCount = 0), row
+            RenderBranchGroup ws, "[THEN]", node("thenChildren"), childPrefix, (elseCount = 0), row, CStr(node("id")) & ":then"
             If elseCount > 0 Then
-                RenderBranchGroup ws, "[ELSE]", node("elseChildren"), childPrefix, True, row
+                RenderBranchGroup ws, "[ELSE]", node("elseChildren"), childPrefix, True, row, CStr(node("id")) & ":else"
             End If
         Case "evaluate"
             Dim cs As Object, ci As Long
@@ -299,7 +303,7 @@ Private Sub RenderNode(ws As Worksheet, node As Object, ByVal prefix As String, 
             Set atEnd = node("atEndChildren")
             Set sc = node("cases")
             If atEnd.Count > 0 Then
-                RenderBranchGroup ws, "[AT END]", atEnd, childPrefix, (sc.Count = 0), row
+                RenderBranchGroup ws, "[AT END]", atEnd, childPrefix, (sc.Count = 0), row, CStr(node("id")) & ":atend"
             End If
             For si = 1 To sc.Count
                 RenderNode ws, sc(si), childPrefix, (si = sc.Count), row
@@ -314,7 +318,8 @@ Private Sub RenderNode(ws As Worksheet, node As Object, ByVal prefix As String, 
 End Sub
 
 Private Sub RenderBranchGroup(ws As Worksheet, ByVal groupLabel As String, children As Object, _
-                              ByVal prefix As String, ByVal isLast As Boolean, ByRef row As Long)
+                              ByVal prefix As String, ByVal isLast As Boolean, ByRef row As Long, _
+                              ByVal armToken As String)
     Dim connector As String, childPrefix As String
     If isLast Then
         connector = prefix & ChrW$(&H2514) & ChrW$(&H2500) & " "
@@ -326,6 +331,7 @@ Private Sub RenderBranchGroup(ws As Worksheet, ByVal groupLabel As String, child
 
     ws.Cells(row, 1).Value = connector & groupLabel
     ws.Cells(row, 3).Value = "BRANCH"
+    If Len(armToken) > 0 Then ws.Cells(row, 6).Value = armToken
     ws.Range(ws.Cells(row, 1), ws.Cells(row, 3)).Interior.Color = C_BRANCH
     row = row + 1
 

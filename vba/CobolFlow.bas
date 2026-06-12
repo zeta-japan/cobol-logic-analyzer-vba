@@ -283,6 +283,22 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
     Set result = New OrderedDict
     result.Add "cases", cases
     result.Add "arms", arms
+    ' SECTION ranges for sheet renderers (owning-section lookup by line);
+    ' data-division sections are excluded, same as the entry detection
+    Dim secList As Collection, sd As OrderedDict
+    Set secList = New Collection
+    For Each ow In mOwners
+        If CStr(ow.Item("kind")) = "section" Then
+            If Not IsDataSection_(CStr(ow.Item("name"))) Then
+                Set sd = New OrderedDict
+                sd.Add "name", CStr(ow.Item("name"))
+                sd.Add "line", CLng(ow.Item("line"))
+                sd.Add "secEnd", CLng(ow.Item("secEnd"))
+                secList.Add sd
+            End If
+        End If
+    Next ow
+    result.Add "sections", secList
     result.Add "normalPaths", normals.Count
     result.Add "abendPaths", abends.Count
     result.Add "truncated", mTruncated
@@ -2548,8 +2564,10 @@ Private Sub CollectArms_(ByVal nodes As Collection, ByVal arms As Collection)
     For Each n In nodes
         t = CStr(n.Item("type"))
         If t = "if" Then
-            AddArm_ arms, CStr(n.Item("id")) & ":then", CLng(n.Item("startLine")), "IF " & CStr(n.Item("condition")) & " [THEN]"
-            AddArm_ arms, CStr(n.Item("id")) & ":else", CLng(n.Item("startLine")), "IF " & CStr(n.Item("condition")) & " [ELSE]"
+            AddArm_ arms, CStr(n.Item("id")) & ":then", CLng(n.Item("startLine")), "IF " & CStr(n.Item("condition")) & " [THEN]", _
+                    FirstChildLine_(n.Item("thenChildren"), CLng(n.Item("startLine")))
+            AddArm_ arms, CStr(n.Item("id")) & ":else", CLng(n.Item("startLine")), "IF " & CStr(n.Item("condition")) & " [ELSE]", _
+                    FirstChildLine_(n.Item("elseChildren"), CLng(n.Item("startLine")))
             CollectArms_ n.Item("thenChildren"), arms
             CollectArms_ n.Item("elseChildren"), arms
         ElseIf t = "evaluate" Then
@@ -2558,36 +2576,52 @@ Private Sub CollectArms_(ByVal nodes As Collection, ByVal arms As Collection)
             hasOther = False
             For wi = 1 To cs.Count
                 Set w = cs(wi)
-                AddArm_ arms, CStr(w.Item("id")), CLng(w.Item("startLine")), "EVALUATE " & CStr(n.Item("expression")) & " WHEN " & CStr(w.Item("condition"))
+                AddArm_ arms, CStr(w.Item("id")), CLng(w.Item("startLine")), "EVALUATE " & CStr(n.Item("expression")) & " WHEN " & CStr(w.Item("condition")), _
+                        CLng(w.Item("startLine"))
                 If CStr(w.Item("condition")) = "OTHER" Then hasOther = True
                 CollectArms_ w.Item("children"), arms
             Next wi
             If Not hasOther Then
-                AddArm_ arms, CStr(n.Item("id")) & ":skip", CLng(n.Item("startLine")), "EVALUATE " & CStr(n.Item("expression")) & " [no-match skip]"
+                AddArm_ arms, CStr(n.Item("id")) & ":skip", CLng(n.Item("startLine")), "EVALUATE " & CStr(n.Item("expression")) & " [no-match skip]", _
+                        CLng(n.Item("startLine"))
             End If
         ElseIf t = "search" Then
             If Not IsNull(n.Item("atEndLine")) Then
-                AddArm_ arms, CStr(n.Item("id")) & ":atend", CLng(n.Item("startLine")), "SEARCH " & CStr(n.Item("tableExpr")) & " [AT END]"
+                AddArm_ arms, CStr(n.Item("id")) & ":atend", CLng(n.Item("startLine")), "SEARCH " & CStr(n.Item("tableExpr")) & " [AT END]", _
+                        FirstChildLine_(n.Item("atEndChildren"), CLng(n.Item("startLine")))
             Else
-                AddArm_ arms, CStr(n.Item("id")) & ":skip", CLng(n.Item("startLine")), "SEARCH " & CStr(n.Item("tableExpr")) & " [AT END skip]"
+                AddArm_ arms, CStr(n.Item("id")) & ":skip", CLng(n.Item("startLine")), "SEARCH " & CStr(n.Item("tableExpr")) & " [AT END skip]", _
+                        CLng(n.Item("startLine"))
             End If
             Dim sc As Collection, si As Long, sw As OrderedDict
             Set sc = n.Item("cases")
             For si = 1 To sc.Count
                 Set sw = sc(si)
-                AddArm_ arms, CStr(sw.Item("id")), CLng(sw.Item("startLine")), "SEARCH WHEN " & CStr(sw.Item("condition"))
+                AddArm_ arms, CStr(sw.Item("id")), CLng(sw.Item("startLine")), "SEARCH WHEN " & CStr(sw.Item("condition")), _
+                        CLng(sw.Item("startLine"))
                 CollectArms_ sw.Item("children"), arms
             Next si
         End If
     Next n
 End Sub
 
-Private Sub AddArm_(ByVal arms As Collection, ByVal token As String, ByVal lineNo As Long, ByVal disp As String)
+' the line where a tester would mark this arm in a source listing: the
+' first statement INSIDE the arm (falls back to the branch line itself
+' for empty arms / skip pseudo-arms)
+Private Function FirstChildLine_(ByVal children As Collection, ByVal fallback As Long) As Long
+    FirstChildLine_ = fallback
+    If children Is Nothing Then Exit Function
+    If children.Count > 0 Then FirstChildLine_ = CLng(children(1).Item("startLine"))
+End Function
+
+Private Sub AddArm_(ByVal arms As Collection, ByVal token As String, ByVal lineNo As Long, _
+                    ByVal disp As String, ByVal markLine As Long)
     Dim a As OrderedDict
     Set a = New OrderedDict
     a.Add "Token", token
     a.Add "Line", lineNo
     a.Add "Disp", disp
+    a.Add "MarkLine", markLine
     arms.Add a
 End Sub
 
