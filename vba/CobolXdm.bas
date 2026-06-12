@@ -24,6 +24,7 @@ Private Const TREE_SHEET As String = "ロジック階層(ソース順)"
 Private Const BESSHI_SHEET As String = "別紙1ドラフト"
 Private Const COL_TC As Long = 4    ' tree sheet: TC number column
 Private Const COL_TOK As Long = 6   ' tree sheet: helper token column
+Private Const PATTERN_SHEET As String = "パターン表ドラフト"
 
 ' arm token -> id of the first covering case ("TC1", ...)
 Public Function BuildTcMap(ByVal flowR As OrderedDict) As OrderedDict
@@ -146,7 +147,6 @@ End Sub
 ' (PERFORM は直前コメントを採用) から要約、右端に ケースNo と分岐行番号。
 ' 自然な日本語への仕上げは人手で行う前提の「8割ドラフト」。
 
-Private Const PATTERN_SHEET As String = "パターン表ドラフト"
 
 Public Sub BuildPatternDraft(ByVal flowR As OrderedDict, ByVal src As String)
     Dim ws As Worksheet
