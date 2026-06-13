@@ -21,6 +21,35 @@ Public Sub Run_All()
     TestRunner.Run_One "Test_Flow_BlockerSteerEval"
     TestRunner.Run_One "Test_Flow_ArmMeta"
     TestRunner.Run_One "Test_Xdm_CondJp"
+    TestRunner.Run_One "Test_Xdm_ActionJp"
+End Sub
+
+' the pattern draft now lists straight-line statements too; ActionJp_
+' routes each verb to its template. ASCII-structural checks (identifiers
+' are preserved, terminators are skipped) - the JP wording is by eye.
+Public Sub Test_Xdm_ActionJp()
+    TestRunner.Assert_Equal "", CobolXdm.ActionJpOf("EXIT"), "bare EXIT is skipped (empty)"
+    TestRunner.Assert_Equal "", CobolXdm.ActionJpOf("CONTINUE"), "CONTINUE is skipped (empty)"
+
+    Dim r As String
+    r = CobolXdm.ActionJpOf("ADD 1 TO CNT-FI1")
+    TestRunner.Assert_True InStr(r, "CNT-FI1") > 0 And InStr(r, "1") > 0, "ADD keeps operand + target"
+    r = CobolXdm.ActionJpOf("MOVE WK-A TO WK-B")
+    TestRunner.Assert_True InStr(r, "WK-A") > 0 And InStr(r, "WK-B") > 0, "MOVE keeps both items"
+    r = CobolXdm.ActionJpOf("INITIALIZE F-SEL1")
+    TestRunner.Assert_True InStr(r, "F-SEL1") > 0, "INITIALIZE keeps the item"
+
+    ' loop form: the UNTIL condition operands survive (loop routing)
+    r = CobolXdm.ActionJpOf("PERFORM UNTIL DCP-WDCPRC1 = DCP-EOF")
+    TestRunner.Assert_True InStr(r, "DCP-WDCPRC1") > 0 And InStr(r, "DCP-EOF") > 0, "PERFORM UNTIL keeps the condition"
+
+    ' simple perform with no comment falls back to the label
+    r = CobolXdm.ActionJpOf("PERFORM S010-FI1-READ-PROC")
+    TestRunner.Assert_True InStr(r, "S010-FI1-READ-PROC") > 0, "simple PERFORM keeps the target"
+    r = CobolXdm.ActionJpOf("SUBTRACT WK-X FROM WK-Y")
+    TestRunner.Assert_True InStr(r, "WK-X") > 0 And InStr(r, "WK-Y") > 0, "SUBTRACT keeps operand + target"
+    r = CobolXdm.ActionJpOf("GO TO ERR-EXIT")
+    TestRunner.Assert_True InStr(r, "ERR-EXIT") > 0, "GO TO keeps the target"
 End Sub
 
 ' template-JP condition translation: operators replaced, identifiers

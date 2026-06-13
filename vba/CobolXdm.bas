@@ -143,7 +143,7 @@ End Sub
 
 ' ============================ パターン表ドラフト ============================
 ' XDM「プログラムパターン表」の機械生成ドラフト: SECTION 順に全分岐を
-' ①-1/①-2... で列挙し、条件をテンプレート日本語化、処理行は子アクション
+' ①-1/①-2... で列挙し（直行文も処理行として出力）、条件をテンプレート日本語化、処理行は子アクション
 ' (PERFORM は直前コメントを採用) から要約、右端に ケースNo と分岐行番号。
 ' 自然な日本語への仕上げは人手で行う前提の「8割ドラフト」。
 
@@ -176,7 +176,7 @@ Public Sub BuildPatternDraft(ByVal flowR As OrderedDict, ByVal src As String)
         .Font.Size = 13
         .Font.Color = RGB(255, 255, 255)
     End With
-    ws.Range("A2").Value = "※ 条件・処理はテンプレート変換。処理行の「・xxx」は PERFORM 直前のコメント由来。ケース列は分岐カバレッジ表と同じ TC 番号。"
+    ws.Range("A2").Value = "※ 条件・処理はテンプレート変換（PERFORM は直前コメントを採用）。入れ子の分岐は親の枝の下にインデント表示（番号は出現順）。ケース列は分岐カバレッジ表と同じ TC 番号。"
     ws.Range("A2").Font.Color = RGB(120, 120, 120)
     ws.Range("A2").Font.Size = 9
 
@@ -212,15 +212,14 @@ Public Sub BuildPatternDraft(ByVal flowR As OrderedDict, ByVal src As String)
         End With
         row = row + 1
 
-        ' all branches inside the section, source order, numbered ①②...
-        Dim brs As Collection, b As OrderedDict, bIdx As Long
-        Set brs = New Collection
-        CollectBranches_ nodes, CLng(s.Item("line")), CLng(s.Item("secEnd")), brs
-        bIdx = 0
-        For Each b In brs
-            bIdx = bIdx + 1
-            RenderBranch_ ws, row, b, bIdx, tcMap, cmts
-        Next b
+        ' section body in SOURCE ORDER: straight-line statements become
+        ' processing bullets, branches are numbered ①②... (nested branches
+        ' render inline under their arm). A pure orchestration section -
+        ' just a PERFORM sequence, no branches - now lists its steps too.
+        Dim branchCtr As Long
+        branchCtr = 0
+        RenderSeq_ ws, row, nodes, CLng(s.Item("line")), CLng(s.Item("secEnd")), _
+                   0, True, branchCtr, tcMap, cmts
     Next s
 
     If row > 5 Then
@@ -238,45 +237,65 @@ Public Sub BuildPatternDraft(ByVal flowR As OrderedDict, ByVal src As String)
     ws.Columns(3).WrapText = False
 End Sub
 
-' branch nodes (if/evaluate/search) whose start line falls in [lo, hi]
-Private Sub CollectBranches_(ByVal list As Collection, ByVal lo As Long, ByVal hi As Long, _
-                             ByVal out As Collection)
-    Dim n As OrderedDict, t As String, ln As Long
+' render a node list in SOURCE ORDER. At the section top level topFilter
+' keeps only nodes in [lo, hi]; nested (arm) calls pass topFilter=False
+' since the children are already inside the section. depth drives the
+' indentation; branchCtr (ByRef) numbers branches pre-order across the
+' whole section so a nested branch follows its parent's number.
+Private Sub RenderSeq_(ByVal ws As Worksheet, ByRef row As Long, ByVal list As Collection, _
+                       ByVal lo As Long, ByVal hi As Long, ByVal depth As Long, _
+                       ByVal topFilter As Boolean, ByRef branchCtr As Long, _
+                       ByVal tcMap As OrderedDict, ByVal cmts As OrderedDict)
+    If list Is Nothing Then Exit Sub
+    Dim n As OrderedDict, t As String, ln As Long, inRange As Boolean, myNum As Long
     For Each n In list
         t = CStr(n.Item("type"))
         ln = CLng(n.Item("startLine"))
-        If t = "if" Then
-            If ln >= lo And ln <= hi Then out.Add n
-            CollectBranches_ n.Item("thenChildren"), lo, hi, out
-            CollectBranches_ n.Item("elseChildren"), lo, hi, out
-        ElseIf t = "evaluate" Or t = "search" Then
-            If ln >= lo And ln <= hi Then out.Add n
-            Dim w As OrderedDict
-            If t = "search" Then
-                CollectBranches_ n.Item("atEndChildren"), lo, hi, out
+        inRange = True
+        If topFilter Then
+            If ln < lo Or ln > hi Then inRange = False
+        End If
+        If inRange Then
+            If t = "if" Or t = "evaluate" Or t = "search" Then
+                branchCtr = branchCtr + 1
+                myNum = branchCtr
+                RenderBranch_ ws, row, n, myNum, depth, branchCtr, tcMap, cmts
+            Else
+                EmitAction_ ws, row, n, depth, cmts
             End If
-            For Each w In n.Item("cases")
-                CollectBranches_ w.Item("children"), lo, hi, out
-            Next w
         End If
     Next n
 End Sub
 
+' one straight-line statement -> a 「・…」 processing row (skips the bare
+' EXIT / CONTINUE that only terminate a paragraph)
+Private Sub EmitAction_(ByVal ws As Worksheet, ByRef row As Long, ByVal n As OrderedDict, _
+                        ByVal depth As Long, ByVal cmts As OrderedDict)
+    Dim jp As String
+    jp = ActionJp_(n, cmts)
+    If Len(jp) = 0 Then Exit Sub
+    ws.Cells(row, 3).Value = Indent_(depth) & jp
+    row = row + 1
+End Sub
+
+' a branch -> numbered ①-1/①-2/... arm blocks; each arm recurses into its
+' own body (nested branches inline, deeper indent)
 Private Sub RenderBranch_(ByVal ws As Worksheet, ByRef row As Long, ByVal b As OrderedDict, _
-                          ByVal bIdx As Long, ByVal tcMap As OrderedDict, ByVal cmts As OrderedDict)
+                          ByVal myNum As Long, ByVal depth As Long, ByRef branchCtr As Long, _
+                          ByVal tcMap As OrderedDict, ByVal cmts As OrderedDict)
     Dim t As String, num As String, ln As Long
     t = CStr(b.Item("type"))
-    num = CircledNum_(bIdx)
+    num = CircledNum_(myNum)
     ln = CLng(b.Item("startLine"))
 
     If t = "if" Then
-        ArmRows_ ws, row, num & "-1", CondJp_(CStr(b.Item("condition"))) & " の場合", _
-                 CStr(b.Item("id")) & ":then", b.Item("thenChildren"), ln, tcMap, cmts
+        RenderArm_ ws, row, num & "-1", CondJp_(CStr(b.Item("condition"))) & " の場合", _
+                   CStr(b.Item("id")) & ":then", b.Item("thenChildren"), ln, depth, branchCtr, tcMap, cmts
         Dim elLn As Long
         elLn = ln
         If Not IsNull(b.Item("elseLine")) Then elLn = CLng(b.Item("elseLine"))
-        ArmRows_ ws, row, num & "-2", "上記以外の場合", _
-                 CStr(b.Item("id")) & ":else", b.Item("elseChildren"), elLn, tcMap, cmts
+        RenderArm_ ws, row, num & "-2", "上記以外の場合", _
+                   CStr(b.Item("id")) & ":else", b.Item("elseChildren"), elLn, depth, branchCtr, tcMap, cmts
     ElseIf t = "evaluate" Then
         Dim cs As Collection, wi As Long, w As OrderedDict, hasOther As Boolean
         Set cs = b.Item("cases")
@@ -284,8 +303,8 @@ Private Sub RenderBranch_(ByVal ws As Worksheet, ByRef row As Long, ByVal b As O
             Set w = cs(wi)
             If CStr(w.Item("condition")) = "OTHER" Then
                 hasOther = True
-                ArmRows_ ws, row, num & "-" & wi, "上記以外の場合（WHEN OTHER）", _
-                         CStr(w.Item("id")), w.Item("children"), CLng(w.Item("startLine")), tcMap, cmts
+                RenderArm_ ws, row, num & "-" & wi, "上記以外の場合（WHEN OTHER）", _
+                           CStr(w.Item("id")), w.Item("children"), CLng(w.Item("startLine")), depth, branchCtr, tcMap, cmts
             Else
                 ' EVALUATE TRUE (DECIDE 変換形) は WHEN 条件そのものを表示
                 Dim hd As String
@@ -294,39 +313,41 @@ Private Sub RenderBranch_(ByVal ws As Worksheet, ByRef row As Long, ByVal b As O
                 Else
                     hd = CStr(b.Item("expression")) & " ＝ " & CStr(w.Item("condition")) & " の場合"
                 End If
-                ArmRows_ ws, row, num & "-" & wi, hd, _
-                         CStr(w.Item("id")), w.Item("children"), CLng(w.Item("startLine")), tcMap, cmts
+                RenderArm_ ws, row, num & "-" & wi, hd, _
+                           CStr(w.Item("id")), w.Item("children"), CLng(w.Item("startLine")), depth, branchCtr, tcMap, cmts
             End If
         Next wi
         If Not hasOther Then
-            ArmRows_ ws, row, num & "-" & (cs.Count + 1), "どの WHEN にも該当しない場合", _
-                     CStr(b.Item("id")) & ":skip", Nothing, ln, tcMap, cmts
+            RenderArm_ ws, row, num & "-" & (cs.Count + 1), "どの WHEN にも該当しない場合", _
+                       CStr(b.Item("id")) & ":skip", Nothing, ln, depth, branchCtr, tcMap, cmts
         End If
     ElseIf t = "search" Then
         Dim sc As Collection, si As Long, sw As OrderedDict
         If Not IsNull(b.Item("atEndLine")) Then
-            ArmRows_ ws, row, num & "-1", "検索該当なしの場合（AT END）", _
-                     CStr(b.Item("id")) & ":atend", b.Item("atEndChildren"), CLng(b.Item("atEndLine")), tcMap, cmts
+            RenderArm_ ws, row, num & "-1", "検索該当なしの場合（AT END）", _
+                       CStr(b.Item("id")) & ":atend", b.Item("atEndChildren"), CLng(b.Item("atEndLine")), depth, branchCtr, tcMap, cmts
         Else
-            ArmRows_ ws, row, num & "-1", "検索該当なしの場合（AT END なし）", _
-                     CStr(b.Item("id")) & ":skip", Nothing, ln, tcMap, cmts
+            RenderArm_ ws, row, num & "-1", "検索該当なしの場合（AT END なし）", _
+                       CStr(b.Item("id")) & ":skip", Nothing, ln, depth, branchCtr, tcMap, cmts
         End If
         Set sc = b.Item("cases")
         For si = 1 To sc.Count
             Set sw = sc(si)
-            ArmRows_ ws, row, num & "-" & (si + 1), CondJp_(CStr(sw.Item("condition"))) & " の場合（SEARCH WHEN）", _
-                     CStr(sw.Item("id")), sw.Item("children"), CLng(sw.Item("startLine")), tcMap, cmts
+            RenderArm_ ws, row, num & "-" & (si + 1), CondJp_(CStr(sw.Item("condition"))) & " の場合（SEARCH WHEN）", _
+                       CStr(sw.Item("id")), sw.Item("children"), CLng(sw.Item("startLine")), depth, branchCtr, tcMap, cmts
         Next si
     End If
 End Sub
 
-' one arm = condition row (番号 / 条件 / ケース / 行) + processing rows
-Private Sub ArmRows_(ByVal ws As Worksheet, ByRef row As Long, ByVal num As String, _
-                     ByVal condText As String, ByVal token As String, ByVal children As Collection, _
-                     ByVal ln As Long, ByVal tcMap As OrderedDict, ByVal cmts As OrderedDict)
+' one arm = a condition row (番号 / 条件 / ケース / 行) followed by its body
+' (rendered in source order one indent deeper); empty arms show 処理なし
+Private Sub RenderArm_(ByVal ws As Worksheet, ByRef row As Long, ByVal num As String, _
+                       ByVal condText As String, ByVal token As String, ByVal children As Collection, _
+                       ByVal ln As Long, ByVal depth As Long, ByRef branchCtr As Long, _
+                       ByVal tcMap As OrderedDict, ByVal cmts As OrderedDict)
     ws.Cells(row, 2).Value = num
     ws.Cells(row, 2).HorizontalAlignment = xlCenter
-    ws.Cells(row, 3).Value = condText
+    ws.Cells(row, 3).Value = Indent_(depth) & condText
     ws.Cells(row, 3).Font.Bold = True
     If tcMap.Exists(token) Then
         ws.Cells(row, 4).Value = CStr(tcMap.Item(token))
@@ -342,71 +363,127 @@ Private Sub ArmRows_(ByVal ws As Worksheet, ByRef row As Long, ByVal num As Stri
     ws.Cells(row, 5).Font.Color = RGB(120, 120, 120)
     row = row + 1
 
-    Dim lines As Collection
-    Set lines = ArmActionsJp_(children, cmts)
-    If lines.Count = 0 Then
+    Dim rowBefore As Long
+    rowBefore = row
+    RenderSeq_ ws, row, children, 0, 0, depth + 1, False, branchCtr, tcMap, cmts
+    If row = rowBefore Then
         If children Is Nothing Then
-            ws.Cells(row, 3).Value = "　（処理なし）"
+            ws.Cells(row, 3).Value = Indent_(depth + 1) & "（処理なし）"
         Else
-            ws.Cells(row, 3).Value = "　（処理なし: CONTINUE）"
+            ws.Cells(row, 3).Value = Indent_(depth + 1) & "（処理なし: CONTINUE）"
         End If
         ws.Cells(row, 3).Font.Color = RGB(120, 120, 120)
         row = row + 1
-    Else
-        Dim v As Variant
-        For Each v In lines
-            ws.Cells(row, 3).Value = "　" & CStr(v)
-            row = row + 1
-        Next v
     End If
 End Sub
 
-' template-JP summary of an arm's direct child statements
-Private Function ArmActionsJp_(ByVal children As Collection, ByVal cmts As OrderedDict) As Collection
-    Dim out As Collection
-    Set out = New Collection
-    Set ArmActionsJp_ = out
-    If children Is Nothing Then Exit Function
-    Dim n As OrderedDict, t As String, lbl As String, p As Long, note As String
-    For Each n In children
-        t = CStr(n.Item("type"))
-        If t = "action" Then
-            lbl = CStr(n.Item("label"))
-            If Left$(lbl, 8) = "PERFORM " Then
-                note = NearbyComment_(cmts, CLng(n.Item("startLine")))
-                If Len(note) > 0 Then
-                    out.Add "・" & note & " を行うこと（" & lbl & "）"
-                Else
-                    out.Add "・" & lbl & " を実行すること"
-                End If
-            ElseIf Left$(lbl, 5) = "CALL " Then
-                out.Add "・サブプログラム呼出を行うこと（" & lbl & "）"
-            ElseIf Left$(lbl, 5) = "MOVE " Then
-                p = InStr(lbl, " TO ")
-                If p > 0 Then
-                    out.Add "・" & Mid$(lbl, p + 4) & " に " & Mid$(lbl, 6, p - 6) & " を設定すること"
-                Else
-                    out.Add "・" & lbl
-                End If
-            ElseIf lbl = "GOBACK" Or Left$(lbl, 8) = "STOP RUN" Then
-                out.Add "・処理を終了すること（" & lbl & "）"
-            Else
-                out.Add "・" & Trunc_(lbl, 70)
-            End If
-        Else
-            ' nested branch: it has its own numbered rows right below
-            out.Add "・条件分岐（後続番号参照: " & Trunc_(BranchHead_(n), 50) & "）"
+' one statement label -> template Japanese (empty string = skip the row)
+Private Function ActionJp_(ByVal n As OrderedDict, ByVal cmts As OrderedDict) As String
+    ActionJp_ = ""
+    If CStr(n.Item("type")) <> "action" Then
+        ActionJp_ = "・条件分岐"
+        Exit Function
+    End If
+    Dim lbl As String, ln As Long, p As Long, note As String
+    lbl = CStr(n.Item("label"))
+    ln = CLng(n.Item("startLine"))
+    If lbl = "EXIT" Or lbl = "CONTINUE" Then Exit Function   ' terminator / no-op
+
+    If Left$(lbl, 8) = "PERFORM " Then
+        ' loop forms first (PERFORM UNTIL / VARYING / n TIMES)
+        p = InStr(lbl, " UNTIL ")
+        If p > 0 Then
+            ActionJp_ = "・" & CondJp_(Trim$(Mid$(lbl, p + 7))) & " になるまで、以下を繰り返すこと（" & lbl & "）"
+            Exit Function
         End If
-    Next n
+        If InStr(lbl, " VARYING ") > 0 Then
+            ActionJp_ = "・繰り返し処理を行うこと（" & lbl & "）"
+            Exit Function
+        End If
+        If Len(lbl) > 6 Then
+            If Right$(lbl, 6) = " TIMES" Then
+                ActionJp_ = "・指定回数 繰り返すこと（" & lbl & "）"
+                Exit Function
+            End If
+        End If
+        ' simple PERFORM <para> (or THRU): adopt the comment above it
+        note = NearbyComment_(cmts, ln)
+        If Len(note) > 0 Then
+            ActionJp_ = "・" & note & " を行うこと（" & lbl & "）"
+        Else
+            ActionJp_ = "・" & lbl & " を実行すること"
+        End If
+        Exit Function
+    End If
+    If Left$(lbl, 5) = "CALL " Then
+        ActionJp_ = "・サブプログラム呼出を行うこと（" & lbl & "）"
+        Exit Function
+    End If
+    If Left$(lbl, 6) = "GO TO " Then
+        ActionJp_ = "・" & Trim$(Mid$(lbl, 7)) & " へ分岐すること"
+        Exit Function
+    End If
+    If Left$(lbl, 5) = "MOVE " Then
+        p = InStr(lbl, " TO ")
+        If p > 0 Then
+            ActionJp_ = "・" & Trim$(Mid$(lbl, p + 4)) & " に " & Trim$(Mid$(lbl, 6, p - 6)) & " を設定すること"
+        Else
+            ActionJp_ = "・" & lbl
+        End If
+        Exit Function
+    End If
+    If Left$(lbl, 4) = "ADD " Then
+        p = InStr(lbl, " TO ")
+        If p > 0 Then
+            ActionJp_ = "・" & Trim$(Mid$(lbl, p + 4)) & " に " & Trim$(Mid$(lbl, 5, p - 5)) & " を加算すること"
+            Exit Function
+        End If
+    ElseIf Left$(lbl, 9) = "SUBTRACT " Then
+        p = InStr(lbl, " FROM ")
+        If p > 0 Then
+            ActionJp_ = "・" & Trim$(Mid$(lbl, p + 6)) & " から " & Trim$(Mid$(lbl, 10, p - 10)) & " を減算すること"
+            Exit Function
+        End If
+    ElseIf Left$(lbl, 11) = "INITIALIZE " Then
+        ActionJp_ = "・" & Trim$(Mid$(lbl, 12)) & " を初期化すること"
+        Exit Function
+    ElseIf Left$(lbl, 8) = "COMPUTE " Then
+        ActionJp_ = "・" & Trim$(Mid$(lbl, 9)) & " を算出すること"
+        Exit Function
+    ElseIf Left$(lbl, 7) = "STRING " Then
+        p = InStr(lbl, " INTO ")
+        If p > 0 Then
+            ActionJp_ = "・" & Trim$(Mid$(lbl, p + 6)) & " を編集（連結）すること"
+        Else
+            ActionJp_ = "・文字列編集を行うこと（" & lbl & "）"
+        End If
+        Exit Function
+    ElseIf Left$(lbl, 5) = "READ " Then
+        p = InStr(lbl, " INTO ")
+        If p > 0 Then
+            ActionJp_ = "・ファイルを読み込み " & Trim$(Mid$(lbl, p + 6)) & " に格納すること（" & lbl & "）"
+        Else
+            ActionJp_ = "・ファイルを読み込むこと（" & lbl & "）"
+        End If
+        Exit Function
+    ElseIf Left$(lbl, 6) = "WRITE " Or Left$(lbl, 8) = "REWRITE " Then
+        ActionJp_ = "・レコードを書き出すこと（" & lbl & "）"
+        Exit Function
+    End If
+    If lbl = "GOBACK" Or Left$(lbl, 8) = "STOP RUN" Or Left$(lbl, 12) = "EXIT PROGRAM" Then
+        ActionJp_ = "・処理を終了すること（" & lbl & "）"
+        Exit Function
+    End If
+    ActionJp_ = "・" & Trunc_(lbl, 70)
 End Function
 
-Private Function BranchHead_(ByVal n As OrderedDict) As String
-    Select Case CStr(n.Item("type"))
-        Case "if": BranchHead_ = "IF " & CStr(n.Item("condition"))
-        Case "evaluate": BranchHead_ = "EVALUATE " & CStr(n.Item("expression"))
-        Case "search": BranchHead_ = "SEARCH " & CStr(n.Item("tableExpr"))
-        Case Else: BranchHead_ = CStr(n.Item("type"))
-    End Select
+' depth-based indentation (full-width spaces) for the 条件・処理 column
+Private Function Indent_(ByVal depth As Long) As String
+    Indent_ = ""
+    Dim i As Long
+    For i = 1 To depth
+        Indent_ = Indent_ & ChrW$(&H3000)
+    Next i
 End Function
 
 ' comment on the line just above (up to 3 lines back, nearest wins)
@@ -461,4 +538,14 @@ Private Function Trunc_(ByVal s As String, ByVal n As Long) As String
     Else
         Trunc_ = s
     End If
+End Function
+
+' test shim: route a synthetic action label through ActionJp_ (no comments)
+Public Function ActionJpOf(ByVal label As String) As String
+    Dim n As OrderedDict
+    Set n = New OrderedDict
+    n.Add "type", "action"
+    n.Add "label", label
+    n.Add "startLine", 1
+    ActionJpOf = ActionJp_(n, New OrderedDict)
 End Function
