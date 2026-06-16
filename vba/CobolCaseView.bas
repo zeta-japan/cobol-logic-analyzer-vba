@@ -20,9 +20,137 @@ Public Sub BuildCaseSheets(ByVal flow As OrderedDict)
     Application.ScreenUpdating = False
     RenderCases_ flow
     RenderMatrix_ flow
+    RenderLegacyCoverage_ flow   ' restate 分岐カバレッジ from the flow engine
 Done_:
     Application.ScreenUpdating = True
 End Sub
+
+' The legacy 分岐カバレッジ sheet (built by CobolLogicViewer from the ver2
+' truncated path enumeration) under-reports on complex programs. Restate it
+' from the flow engine so its number matches 分岐カバレッジ表: covered = an
+' arm is hit by any selected case (normal or abnormal).
+Private Sub RenderLegacyCoverage_(ByVal flow As OrderedDict)
+    If flow Is Nothing Then Exit Sub
+    Dim ws As Worksheet
+    On Error Resume Next
+    Set ws = ThisWorkbook.Sheets("分岐カバレッジ")
+    On Error GoTo 0
+    If ws Is Nothing Then Exit Sub
+    ws.Cells.Clear
+
+    Dim arms As Collection, cases As Collection
+    Set arms = flow.Item("arms")
+    Set cases = flow.Item("cases")
+
+    ' arm token -> the cases that cover it
+    Dim covMap As OrderedDict, c As OrderedDict, v As Variant
+    Set covMap = New OrderedDict
+    For Each c In cases
+        For Each v In c.Item("arms")
+            If Not covMap.Exists(CStr(v)) Then covMap.Add CStr(v), New Collection
+            covMap.Item(CStr(v)).Add CStr(c.Item("id"))
+        Next v
+    Next c
+
+    Dim total As Long, cnt As Long, a As OrderedDict
+    total = arms.Count
+    For Each a In arms
+        If covMap.Exists(CStr(a.Item("Token"))) Then cnt = cnt + 1
+    Next a
+
+    ws.Range("A1").Value = "分岐カバレッジ"
+    With ws.Range("A1")
+        .Interior.Color = RGB(31, 78, 121)
+        .Font.Bold = True
+        .Font.Size = 13
+        .Font.Color = RGB(255, 255, 255)
+    End With
+    ws.Range("A2").Value = "※ テストケース生成エンジン基準。分岐カバレッジ表と一致（カバー = いずれかのケースが通過）。"
+    ws.Range("A2").Font.Color = RGB(120, 120, 120)
+    ws.Range("A2").Font.Size = 9
+    Dim rate As Double
+    If total > 0 Then rate = cnt / total
+    ws.Range("A3").Value = "カバレッジ"
+    ws.Range("B3").Value = cnt & " / " & total & " 分岐 (" & Format(rate, "0.0%") & ")"
+    ws.Range("B3").Font.Bold = True
+
+    Dim hdr As Long
+    hdr = 5
+    ws.Cells(hdr, 1).Value = "分岐ID"
+    ws.Cells(hdr, 2).Value = "種別"
+    ws.Cells(hdr, 3).Value = "ラベル"
+    ws.Cells(hdr, 4).Value = "行番号"
+    ws.Cells(hdr, 5).Value = "カバー状況"
+    ws.Cells(hdr, 6).Value = "カバーするTC"
+    With ws.Range(ws.Cells(hdr, 1), ws.Cells(hdr, 6))
+        .Font.Bold = True
+        .Font.Color = RGB(255, 255, 255)
+        .Interior.Color = RGB(46, 91, 143)
+    End With
+
+    Dim row As Long, pass As Long, tok As String, isCov As Boolean
+    row = hdr + 1
+    For pass = 0 To 1   ' 未カバー first, then カバー済
+        For Each a In arms
+            tok = CStr(a.Item("Token"))
+            isCov = covMap.Exists(tok)
+            If (pass = 0 And Not isCov) Or (pass = 1 And isCov) Then
+                ws.Cells(row, 1).Value = tok
+                ws.Cells(row, 2).Value = ArmKind_(tok)
+                ws.Cells(row, 3).Value = CStr(a.Item("Disp"))
+                ws.Cells(row, 4).Value = CLng(a.Item("Line"))
+                If isCov Then
+                    ws.Cells(row, 5).Value = "カバー済"
+                    ws.Cells(row, 5).Interior.Color = RGB(198, 239, 206)
+                    ws.Cells(row, 6).Value = JoinColl_(covMap.Item(tok), ", ")
+                Else
+                    ws.Cells(row, 5).Value = "未カバー" & DiagJp_(flow, tok)
+                    ws.Cells(row, 5).Interior.Color = RGB(255, 199, 206)
+                End If
+                row = row + 1
+            End If
+        Next a
+    Next pass
+
+    If row > hdr + 1 Then
+        With ws.Range(ws.Cells(hdr, 1), ws.Cells(row - 1, 6)).Borders
+            .LineStyle = xlContinuous
+            .Color = RGB(184, 188, 196)
+            .Weight = xlThin
+        End With
+    End If
+    ws.Columns("A").ColumnWidth = 22
+    ws.Columns("B").ColumnWidth = 10
+    ws.Columns("C").ColumnWidth = 56
+    ws.Columns("D").ColumnWidth = 8
+    ws.Columns("E").ColumnWidth = 14
+    ws.Columns("F").ColumnWidth = 24
+    On Error Resume Next
+    ws.UsedRange.Font.Name = "Meiryo UI"
+    On Error GoTo 0
+End Sub
+
+' branch kind from an arm token (if- / when- / evaluate- / search-)
+Private Function ArmKind_(ByVal token As String) As String
+    If Left$(token, 3) = "if-" Then
+        ArmKind_ = "if"
+    ElseIf Left$(token, 5) = "when-" Or Left$(token, 9) = "evaluate-" Then
+        ArmKind_ = "evaluate"
+    ElseIf Left$(token, 7) = "search-" Then
+        ArmKind_ = "search"
+    Else
+        ArmKind_ = "branch"
+    End If
+End Function
+
+Private Function JoinColl_(ByVal c As Collection, ByVal sep As String) As String
+    Dim s As String, v As Variant
+    For Each v In c
+        If Len(s) > 0 Then s = s & sep
+        s = s & CStr(v)
+    Next v
+    JoinColl_ = s
+End Function
 
 '======================================================================
 ' テストケース候補 (step-flow blocks)
