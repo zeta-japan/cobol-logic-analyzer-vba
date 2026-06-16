@@ -244,6 +244,36 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
                 End If
             End If
         Next a
+
+        ' second pass: an arm can be "covered" only because a seed reached
+        ' it then ran into a DEEP abend (one beyond the shallow abend-
+        ' avoidance), so it has no NORMAL case - it shows up only under an
+        ' abnormal column. For every arm covered abnormally but not by a normal
+        ' (goback) candidate, try a targeted normal walk; add it if it ends
+        ' normally. Genuinely abend-only arms fail here (their walk abends)
+        ' and stay abnormal-only.
+        Dim normCov As OrderedDict, ca As OrderedDict, cv As Variant
+        Dim a2 As OrderedDict, wN As OrderedDict, t2 As String
+        Set normCov = New OrderedDict
+        For Each ca In cands
+            If CStr(ca.Item("Term")) = "goback" Then
+                For Each cv In ca.Item("ArmsL")
+                    If Not normCov.Exists(CStr(cv)) Then normCov.Add CStr(cv), True
+                Next cv
+            End If
+        Next ca
+        For Each a2 In arms
+            t2 = CStr(a2.Item("Token"))
+            If mArmCtx.Exists(t2) And covered.Exists(t2) And Not normCov.Exists(t2) Then
+                Set wN = WalkTo_(t2, False, entry, secLabels)
+                If CStr(wN.Item("Term")) = "goback" And Not CBool(wN.Item("Missed")) Then
+                    AddCand_ cands, covered, wN
+                    For Each cv In wN.Item("ArmsL")
+                        If Not normCov.Exists(CStr(cv)) Then normCov.Add CStr(cv), True
+                    Next cv
+                End If
+            End If
+        Next a2
     End If
     If mArmDiag Is Nothing Then Set mArmDiag = New OrderedDict
 
@@ -284,7 +314,21 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
     result.Add "cases", cases
     result.Add "arms", arms
     ' SECTION ranges for sheet renderers (owning-section lookup by line);
-    ' data-division sections are excluded, same as the entry detection
+    ' data-division sections are excluded, same as the entry detection.
+    ' "note" = the comment above the section header (kanji description).
+    Dim cmtMap As OrderedDict, cmtE As OrderedDict, codeSet As OrderedDict, lnE As OrderedDict
+    Set cmtMap = New OrderedDict
+    If norm.Exists("Comments") Then
+        For Each cmtE In norm.Item("Comments")
+            If Not cmtMap.Exists(CStr(cmtE.Item("Number"))) Then _
+                cmtMap.Add CStr(cmtE.Item("Number")), CStr(cmtE.Item("Text"))
+        Next cmtE
+    End If
+    ' code-line set so SecNote_ can skip blank gaps yet stop at real code
+    Set codeSet = New OrderedDict
+    For Each lnE In lines
+        If Not codeSet.Exists(CStr(lnE.Item("Number"))) Then codeSet.Add CStr(lnE.Item("Number")), True
+    Next lnE
     Dim secList As Collection, sd As OrderedDict
     Set secList = New Collection
     For Each ow In mOwners
@@ -294,6 +338,7 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
                 sd.Add "name", CStr(ow.Item("name"))
                 sd.Add "line", CLng(ow.Item("line"))
                 sd.Add "secEnd", CLng(ow.Item("secEnd"))
+                sd.Add "note", SecNote_(cmtMap, codeSet, CLng(ow.Item("line")))
                 secList.Add sd
             End If
         End If
@@ -1201,6 +1246,33 @@ Private Function IsDataSection_(ByVal nm As String) As Boolean
         Case Else
             IsDataSection_ = False
     End Select
+End Function
+
+' the comment just above a section header, used as the section's kanji
+' label. Scans a small window upward: decoration rows (****) are skipped,
+' blank lines (gaps in the line-number space) are skipped, and the scan
+' stops at the first real CODE line so a previous section's tail comment
+' is never picked up.
+Private Function SecNote_(ByVal cmtMap As OrderedDict, ByVal codeSet As OrderedDict, _
+                          ByVal lineNo As Long) As String
+    SecNote_ = ""
+    Dim k As Long, ctext As String, bare As String
+    For k = lineNo - 1 To lineNo - 6 Step -1
+        If k < 1 Then Exit For
+        If cmtMap.Exists(CStr(k)) Then
+            ctext = CStr(cmtMap.Item(CStr(k)))
+            bare = Replace(Replace(Replace(Replace(ctext, "*", ""), "-", ""), "=", ""), "/", "")
+            bare = Replace(bare, " ", "")
+            If Len(bare) > 0 Then
+                SecNote_ = Trim$(Replace(ctext, "*", ""))
+                Exit Function
+            End If
+            ' decoration-only comment - keep scanning upward
+        ElseIf codeSet.Exists(CStr(k)) Then
+            Exit For   ' hit a real code line above - stop
+        End If
+        ' else: blank line (not comment, not code) - skip and keep scanning
+    Next k
 End Function
 
 Private Function OwnerByName_(ByVal nm As String) As OrderedDict

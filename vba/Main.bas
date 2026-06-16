@@ -146,7 +146,7 @@ Public Sub SetupControlSheet()
     ws.Range("B15").value = "②  テストケース候補（正常系=C1最少シナリオ + 異常系シナリオ、ステップフロー形式）"
     ws.Range("B16").value = "③  分岐カバレッジ表（検証Point × ケースの○マトリクス、SECTION列付き、未カバー行は赤）"
     ws.Range("B17").value = "④  入出力-想定結果（ケース毎の入力設定・出力想定値・実測記入欄）"
-    ws.Range("B18").value = "⑤  Driver雛形 ／ 別紙1ドラフト（ソース＋ケースNo標記） ／ 呼出関係・呼出関係図・分岐カバレッジ"
+    ws.Range("B18").value = "⑤  Driver雛形 ／ 別紙1ドラフト・パターン表ドラフト（XDM転記用） ／ 呼出関係ほか"
     ws.Rows("14:18").RowHeight = 19
 
     ' --- footer ----------------------------------------------------------
@@ -289,6 +289,7 @@ Public Sub AnalyzeAndBuild(ByVal cblPath As String)
         On Error Resume Next
         CobolCaseView.BuildCaseSheets flowR
         CobolXdm.BuildBesshiDraft flowR, src
+        CobolXdm.BuildPatternDraft flowR, src
         On Error GoTo 0
     Else
         FlowFailBanner_ flowErr
@@ -359,7 +360,7 @@ End Sub
 Private Sub FlowFailBanner_(ByVal msg As String)
     On Error Resume Next
     Dim nm As Variant, ws As Worksheet
-    For Each nm In Array("テストケース候補", "分岐カバレッジ表", "入出力-想定結果", "Driver雛形", "別紙1ドラフト")
+    For Each nm In Array("テストケース候補", "分岐カバレッジ表", "入出力-想定結果", "Driver雛形", "別紙1ドラフト", "パターン表ドラフト")
         Set ws = JsonParser.EnsureSheet(CStr(nm))
         ws.Cells.Clear
         ws.Range("A1").value = "ver3.0 ケース生成に失敗しました（解析エラー）"

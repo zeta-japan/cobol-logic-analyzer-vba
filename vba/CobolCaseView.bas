@@ -278,12 +278,14 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
 
     Dim cases As Collection
     Set cases = flow.Item("cases")
+    Dim ncol As Long
+    ncol = 3 + cases.Count    ' last data column (C = 備考, D.. = TCn)
 
     Dim hdr As Long
     hdr = 4
     ws.Cells(hdr, 1).Value = "検証Point（分岐アーム）"
     ws.Cells(hdr, 2).Value = "行"
-    ws.Cells(hdr, 3).Value = "SECTION"
+    ws.Cells(hdr, 3).Value = "備考"
     Dim ci As Long, c As OrderedDict
     ci = 0
     For Each c In cases
@@ -291,20 +293,44 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
         ws.Cells(hdr, 3 + ci).Value = CStr(c.Item("id"))
     Next c
     ' column header: dark blue band, white text; TC numbers centered
-    With ws.Range(ws.Cells(hdr, 1), ws.Cells(hdr, 3 + cases.Count))
+    With ws.Range(ws.Cells(hdr, 1), ws.Cells(hdr, ncol))
         .Font.Bold = True
         .Font.Color = RGB(255, 255, 255)
         .Interior.Color = RGB(46, 91, 143)
     End With
-    ws.Range(ws.Cells(hdr, 2), ws.Cells(hdr, 3 + cases.Count)).HorizontalAlignment = xlCenter
+    ' each TC header is tinted by its 系: 正常=緑 / 異常=桃 (白字)
+    ci = 0
+    For Each c In cases
+        ci = ci + 1
+        ws.Cells(hdr, 3 + ci).Interior.Color = KindColor_(CStr(c.Item("kind")))
+    Next c
+    ws.Range(ws.Cells(hdr, 2), ws.Cells(hdr, ncol)).HorizontalAlignment = xlCenter
 
+    ' body: SECTION bands (A=名称 / C=備考の漢字名) + 検証Point rows
     Dim row As Long, a As OrderedDict, hit As Boolean, anyHit As Boolean, v As Variant
-    Dim curSec As String
+    Dim secName As String, prevSec As String, blockStart As Long
+    Dim blocks As Collection
+    Set blocks = New Collection
+    prevSec = ChrW$(1)    ' sentinel: no section yet
     row = hdr + 1
     For Each a In flow.Item("arms")
+        secName = SectionOf_(flow, CLng(a.Item("Line")))
+        If secName <> prevSec Then
+            If prevSec <> ChrW$(1) Then blocks.Add Array(blockStart, row - 1)
+            ws.Cells(row, 1).Value = secName
+            ws.Cells(row, 3).Value = SectionNoteOf_(flow, secName)
+            With ws.Range(ws.Cells(row, 1), ws.Cells(row, ncol))
+                .Interior.Color = RGB(220, 230, 241)
+                .Font.Bold = True
+                .Font.Color = RGB(31, 78, 121)
+            End With
+            blockStart = row
+            prevSec = secName
+            row = row + 1
+        End If
         ' zebra banding on alternate rows (overridden by the red NG fill)
         If ((row - hdr) Mod 2) = 0 Then
-            ws.Range(ws.Cells(row, 1), ws.Cells(row, 3 + cases.Count)).Interior.Color = RGB(242, 244, 247)
+            ws.Range(ws.Cells(row, 1), ws.Cells(row, ncol)).Interior.Color = RGB(242, 244, 247)
         End If
         ws.Cells(row, 1).Value = CStr(a.Item("Disp"))
         On Error Resume Next
@@ -316,9 +342,6 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
             Err.Clear
         End If
         On Error GoTo 0
-        curSec = SectionOf_(flow, CLng(a.Item("Line")))
-        ws.Cells(row, 3).Value = curSec
-        ws.Cells(row, 3).Font.Size = 9
 
         anyHit = False
         ci = 0
@@ -335,12 +358,13 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
             End If
         Next c
         If Not anyHit Then
-            ws.Range(ws.Cells(row, 1), ws.Cells(row, 3 + cases.Count)).Interior.Color = RGB(255, 199, 206)
-            ws.Cells(row, 3 + cases.Count + 1).Value = "未カバー" & DiagJp_(flow, CStr(a.Item("Token")))
-            ws.Cells(row, 3 + cases.Count + 1).Font.Color = RGB(192, 0, 0)
+            ws.Range(ws.Cells(row, 1), ws.Cells(row, ncol)).Interior.Color = RGB(255, 199, 206)
+            ws.Cells(row, ncol + 1).Value = "未カバー" & DiagJp_(flow, CStr(a.Item("Token")))
+            ws.Cells(row, ncol + 1).Font.Color = RGB(192, 0, 0)
         End If
         row = row + 1
     Next a
+    If prevSec <> ChrW$(1) Then blocks.Add Array(blockStart, row - 1)
 
     If row > hdr + 1 Then
         With ws.Range(ws.Cells(hdr + 1, 2), ws.Cells(row - 1, 2))
@@ -349,12 +373,20 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
             .HorizontalAlignment = xlCenter
         End With
         ' full grid (one range-level call - cheap regardless of row count)
-        With ws.Range(ws.Cells(hdr, 1), ws.Cells(row - 1, 3 + cases.Count)).Borders
+        With ws.Range(ws.Cells(hdr, 1), ws.Cells(row - 1, ncol)).Borders
             .LineStyle = xlContinuous
             .Color = RGB(184, 188, 196)
             .Weight = xlThin
         End With
     End If
+
+    ' thick box per SECTION block (band + its rows)
+    Dim bk As Variant
+    For Each bk In blocks
+        With ws.Range(ws.Cells(CLng(bk(0)), 1), ws.Cells(CLng(bk(1)), ncol))
+            .BorderAround LineStyle:=xlContinuous, Weight:=xlMedium, Color:=RGB(89, 89, 89)
+        End With
+    Next bk
 
     ' footer: 系 / 終了形態 / 対象
     Dim ftrTop As Long
@@ -371,6 +403,8 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
             ws.Cells(row, 3 + ci).Value = "異常"
         End If
     Next c
+    Dim sysRow As Long
+    sysRow = row
     row = row + 1
     ws.Cells(row, 1).Value = "終了形態"
     ws.Cells(row, 1).Font.Bold = True
@@ -395,22 +429,46 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
     Next c
 
     ' footer block: light gray band + centered values + grid
-    With ws.Range(ws.Cells(ftrTop, 1), ws.Cells(row, 3 + cases.Count))
+    With ws.Range(ws.Cells(ftrTop, 1), ws.Cells(row, ncol))
         .Interior.Color = RGB(231, 233, 236)
         .Borders.LineStyle = xlContinuous
         .Borders.Color = RGB(184, 188, 196)
         .Borders.Weight = xlThin
     End With
-    ws.Range(ws.Cells(ftrTop, 4), ws.Cells(row, 3 + cases.Count)).HorizontalAlignment = xlCenter
+    ws.Range(ws.Cells(ftrTop, 4), ws.Cells(row, ncol)).HorizontalAlignment = xlCenter
+    ' the 系 row reuses the TC header tint (緑/桃 + 白字) so 正常/異常 read at a glance
+    ci = 0
+    For Each c In cases
+        ci = ci + 1
+        With ws.Cells(sysRow, 3 + ci)
+            .Interior.Color = KindColor_(CStr(c.Item("kind")))
+            .Font.Color = RGB(255, 255, 255)
+            .Font.Bold = True
+        End With
+    Next c
 
     ws.Columns("A").ColumnWidth = 56
     ws.Columns("B").ColumnWidth = 6
-    ws.Columns("C").ColumnWidth = 18
+    ws.Columns("C").ColumnWidth = 24
     Dim k As Long
     For k = 1 To cases.Count + 1
         ws.Columns(3 + k).ColumnWidth = 12
     Next k
+
+    ' whole-sheet font: Meiryo UI (Font.Name preserves bold/color/size)
+    On Error Resume Next
+    ws.UsedRange.Font.Name = "Meiryo UI"
+    On Error GoTo 0
 End Sub
+
+' 系 tint: 正常 = 緑 / 異常 = 桃 (both with white text)
+Private Function KindColor_(ByVal kind As String) As Long
+    If kind = "normal" Then
+        KindColor_ = RGB(84, 130, 53)
+    Else
+        KindColor_ = RGB(192, 80, 110)
+    End If
+End Function
 
 ' owning SECTION of a source line (from the flow result's section ranges)
 Private Function SectionOf_(ByVal flow As OrderedDict, ByVal lineNo As Long) As String
@@ -420,6 +478,19 @@ Private Function SectionOf_(ByVal flow As OrderedDict, ByVal lineNo As Long) As 
     For Each s In flow.Item("sections")
         If CLng(s.Item("line")) <= lineNo And lineNo <= CLng(s.Item("secEnd")) Then
             SectionOf_ = CStr(s.Item("name"))
+        End If
+    Next s
+End Function
+
+' the kanji description carried on a SECTION (the comment above its header)
+Private Function SectionNoteOf_(ByVal flow As OrderedDict, ByVal name As String) As String
+    SectionNoteOf_ = ""
+    If Not flow.Exists("sections") Then Exit Function
+    Dim s As OrderedDict
+    For Each s In flow.Item("sections")
+        If CStr(s.Item("name")) = name Then
+            If s.Exists("note") Then SectionNoteOf_ = CStr(s.Item("note"))
+            Exit Function
         End If
     Next s
 End Function

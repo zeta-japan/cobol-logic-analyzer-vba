@@ -17,9 +17,55 @@ Public Sub Run_All()
     TestRunner.Run_One "Test_Flow_ReadAheadEval"
     TestRunner.Run_One "Test_Flow_ArithAndGoto"
     TestRunner.Run_One "Test_Flow_CallArgUnset"
+    TestRunner.Run_One "Test_Flow_DeepAbendNormalCover"
     TestRunner.Run_One "Test_Flow_BlockerSteer"
     TestRunner.Run_One "Test_Flow_BlockerSteerEval"
     TestRunner.Run_One "Test_Flow_ArmMeta"
+    TestRunner.Run_One "Test_Xdm_CondJp"
+    TestRunner.Run_One "Test_Xdm_ActionJp"
+End Sub
+
+' the pattern draft now lists straight-line statements too; ActionJp_
+' routes each verb to its template. ASCII-structural checks (identifiers
+' are preserved, terminators are skipped) - the JP wording is by eye.
+Public Sub Test_Xdm_ActionJp()
+    TestRunner.Assert_Equal "", CobolXdm.ActionJpOf("EXIT"), "bare EXIT is skipped (empty)"
+    TestRunner.Assert_Equal "", CobolXdm.ActionJpOf("CONTINUE"), "CONTINUE is skipped (empty)"
+
+    Dim r As String
+    r = CobolXdm.ActionJpOf("ADD 1 TO CNT-FI1")
+    TestRunner.Assert_True InStr(r, "CNT-FI1") > 0 And InStr(r, "1") > 0, "ADD keeps operand + target"
+    TestRunner.Assert_Equal "", CobolXdm.ActionJpOf("MOVE WK-A TO WK-B"), "MOVE with no output records -> skipped"
+    TestRunner.Assert_Equal "", CobolXdm.ActionJpOf2("MOVE WK-A TO WK-SUB-PARM", "N-PARAM"), "MOVE to a non-output item -> skipped"
+    TestRunner.Assert_True InStr(CobolXdm.ActionJpOf2("MOVE WS-X TO N-PARAM-PA310", "N-PARAM"), "N-PARAM-PA310") > 0, "MOVE to an output (LINKAGE) item -> kept"
+    TestRunner.Assert_Equal "", CobolXdm.ActionJpOf("INITIALIZE F-SEL1"), "INITIALIZE is housekeeping (skipped)"
+    TestRunner.Assert_Equal "", CobolXdm.ActionJpOf("GOBACK"), "GOBACK is housekeeping (skipped)"
+
+    ' loop form: the UNTIL condition operands survive (loop routing)
+    r = CobolXdm.ActionJpOf("PERFORM UNTIL DCP-WDCPRC1 = DCP-EOF")
+    TestRunner.Assert_True InStr(r, "DCP-WDCPRC1") > 0 And InStr(r, "DCP-EOF") > 0, "PERFORM UNTIL keeps the condition"
+
+    ' simple perform with no comment falls back to the label
+    r = CobolXdm.ActionJpOf("PERFORM S010-FI1-READ-PROC")
+    TestRunner.Assert_True InStr(r, "S010-FI1-READ-PROC") > 0, "simple PERFORM keeps the target"
+    r = CobolXdm.ActionJpOf("SUBTRACT WK-X FROM WK-Y")
+    TestRunner.Assert_True InStr(r, "WK-X") > 0 And InStr(r, "WK-Y") > 0, "SUBTRACT keeps operand + target"
+    r = CobolXdm.ActionJpOf("GO TO ERR-EXIT")
+    TestRunner.Assert_True InStr(r, "ERR-EXIT") > 0, "GO TO keeps the target"
+End Sub
+
+' template-JP condition translation: operators replaced, identifiers
+' and literals preserved (the JP words themselves are checked by eye -
+' this file is ASCII, so assertions are structural)
+Public Sub Test_Xdm_CondJp()
+    Dim r As String
+    r = CobolXdm.CondJp_("W-PA210 = '97' OR W-PB210 = '99000010'")
+    TestRunner.Assert_True InStr(r, " OR ") = 0, "OR translated away"
+    TestRunner.Assert_True InStr(r, "'97'") > 0, "literal preserved"
+    TestRunner.Assert_True InStr(r, "W-PA210") = 1, "item name preserved at head"
+    r = CobolXdm.CondJp_("DT1 NOT = 0 AND DT2 NOT = 0")
+    TestRunner.Assert_True InStr(r, " AND ") = 0, "AND translated away"
+    TestRunner.Assert_True InStr(r, "NOT") = 0, "NOT= folded into one operator"
 End Sub
 
 ' ver3.3 deliverable plumbing on the BlockerSteer fixture: arms carry
@@ -641,4 +687,101 @@ Private Function BlockerSteerSrc_() As String
     s = s & "       READS-999." & vbLf
     s = s & "           EXIT." & vbLf
     BlockerSteerSrc_ = s
+End Function
+
+' B fix (ver3.5): a loop-index boundary arm (IF I-IDX1 NOT = 26 ELSE,
+' i.e. I-IDX1 = 26) is normally reachable, but the ELSE-preferring seed
+' descends into a DEEP abend (PERFORM MID-SEC -> U-ABEND, beyond the
+' shallow abend-avoidance) and "claims" the arm, leaving it covered only
+' by the ?? case. The second normal-coverage pass must give it a normal
+' case. Mirrors PGM-N if-238:else. Oracle BIGCASE9: normal=3, abend=1.
+Public Sub Test_Flow_DeepAbendNormalCover()
+    Dim s As String
+    s = ""
+    s = s & "       WORKING-STORAGE SECTION." & vbLf
+    s = s & "       01  W-CH    PIC X(01)." & vbLf
+    s = s & "       01  W-CA    PIC X(01)." & vbLf
+    s = s & "       01  W-RC    PIC X(01)." & vbLf
+    s = s & "       01  I-IDX1  PIC 9(02)." & vbLf
+    s = s & "       01  W-OUT   PIC X(02)." & vbLf
+    s = s & "       PROCEDURE DIVISION." & vbLf
+    s = s & "       MAIN-PROC SECTION." & vbLf
+    s = s & "       MAIN-000." & vbLf
+    s = s & "           PERFORM LOOP-SEC." & vbLf
+    s = s & "           PERFORM CALL-SEC." & vbLf
+    s = s & "           GOBACK." & vbLf
+    s = s & "       LOOP-SEC SECTION." & vbLf
+    s = s & "       LOOP-000." & vbLf
+    s = s & "           PERFORM VARYING I-IDX1 FROM 1 BY 1" & vbLf
+    s = s & "               UNTIL I-IDX1 > 26" & vbLf
+    s = s & "               IF W-CH = W-CA" & vbLf
+    s = s & "               THEN" & vbLf
+    s = s & "                   MOVE 'AA' TO W-OUT" & vbLf
+    s = s & "               ELSE" & vbLf
+    s = s & "                   IF I-IDX1 NOT = 26" & vbLf
+    s = s & "                   THEN" & vbLf
+    s = s & "                       MOVE 'BB' TO W-OUT" & vbLf
+    s = s & "                   ELSE" & vbLf
+    s = s & "                       CONTINUE" & vbLf
+    s = s & "                   END-IF" & vbLf
+    s = s & "               END-IF" & vbLf
+    s = s & "           END-PERFORM." & vbLf
+    s = s & "       LOOP-999." & vbLf
+    s = s & "           EXIT." & vbLf
+    s = s & "       CALL-SEC SECTION." & vbLf
+    s = s & "       CALL-000." & vbLf
+    s = s & "           IF W-RC = '0'" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               MOVE 'OK' TO W-OUT" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               PERFORM MID-SEC" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "       CALL-999." & vbLf
+    s = s & "           EXIT." & vbLf
+    s = s & "       MID-SEC SECTION." & vbLf
+    s = s & "       MID-000." & vbLf
+    s = s & "           PERFORM U-ABEND-PROC." & vbLf
+    s = s & "       MID-999." & vbLf
+    s = s & "           EXIT." & vbLf
+    s = s & "       U-ABEND-PROC SECTION." & vbLf
+    s = s & "       UAB-000." & vbLf
+    s = s & "           CALL 'ERRSUB'." & vbLf
+    s = s & "       UAB-999." & vbLf
+    s = s & "           EXIT." & vbLf
+
+    Dim flow As OrderedDict
+    Set flow = CobolFlow.Analyze_Flow(s, New Collection)
+    TestRunner.Assert_Equal CLng(0), CLng(UncovCount_(flow)), "deep-abend fixture fully covered"
+    Dim tok As String
+    tok = ArmTokenByDisp_(flow, "IF I-IDX1 NOT = 26 [ELSE]")
+    TestRunner.Assert_True Len(tok) > 0, "found the idx-equality boundary arm"
+    TestRunner.Assert_True NormCovers_(flow, tok), "idx-equality boundary arm covered by a NORMAL case (not only abnormal)"
+End Sub
+
+' token of the arm whose display text matches (or "" if none)
+Private Function ArmTokenByDisp_(ByVal flow As OrderedDict, ByVal disp As String) As String
+    ArmTokenByDisp_ = ""
+    Dim a As OrderedDict
+    For Each a In flow.Item("arms")
+        If CStr(a.Item("Disp")) = disp Then
+            ArmTokenByDisp_ = CStr(a.Item("Token"))
+            Exit Function
+        End If
+    Next a
+End Function
+
+' True if a NORMAL-kind case covers the arm token
+Private Function NormCovers_(ByVal flow As OrderedDict, ByVal token As String) As Boolean
+    NormCovers_ = False
+    Dim c As OrderedDict, v As Variant
+    For Each c In flow.Item("cases")
+        If CStr(c.Item("kind")) = "normal" Then
+            For Each v In c.Item("arms")
+                If CStr(v) = token Then
+                    NormCovers_ = True
+                    Exit Function
+                End If
+            Next v
+        End If
+    Next c
 End Function
