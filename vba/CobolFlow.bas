@@ -150,11 +150,15 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
         End If
     Next ow
 
+    BuildCut_
+
     ' transitive terminators: a SECTION that unconditionally reaches a
     ' terminator (a top-level PERFORM of a terminator, or GOBACK, before any
     ' top-level branch) is itself a terminator - e.g. an error handler that
     ' always PERFORMs the abend section. Without this, abend-avoidance walks
     ' into such a PERFORM, dies, and blocks every downstream arm. Fixpoint.
+    ' MUST run after BuildCut_: SectionAlwaysTerminates_ -> RangeNodes_ ->
+    ' CapHi_ reads mCut, which BuildCut_ builds (else error 91 on Nothing).
     Dim tChanged As Boolean, ow2 As OrderedDict, nmT As String
     Do
         tChanged = False
@@ -171,8 +175,6 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
             End If
         Next ow2
     Loop While tChanged
-
-    BuildCut_
     BuildGroupMaps_ lines
     BuildCondItems_ mNodes
     Set mSynth = New OrderedDict
