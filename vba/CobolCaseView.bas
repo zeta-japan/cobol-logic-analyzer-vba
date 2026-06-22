@@ -52,10 +52,15 @@ Private Sub RenderLegacyCoverage_(ByVal flow As OrderedDict)
         Next v
     Next c
 
-    Dim total As Long, cnt As Long, a As OrderedDict
+    Dim total As Long, cnt As Long, deadCnt As Long, a As OrderedDict
+    Dim dsec As String
     total = arms.Count
     For Each a In arms
-        If covMap.Exists(CStr(a.Item("Token"))) Then cnt = cnt + 1
+        If covMap.Exists(CStr(a.Item("Token"))) Then
+            cnt = cnt + 1
+        ElseIf DeadSection_(flow, CStr(a.Item("Token")), dsec) Then
+            deadCnt = deadCnt + 1
+        End If
     Next a
 
     ws.Range("A1").Value = "分岐カバレッジ"
@@ -68,11 +73,17 @@ Private Sub RenderLegacyCoverage_(ByVal flow As OrderedDict)
     ws.Range("A2").Value = "※ テストケース生成エンジン基準。分岐カバレッジ表と一致（カバー = いずれかのケースが通過）。"
     ws.Range("A2").Font.Color = RGB(120, 120, 120)
     ws.Range("A2").Font.Size = 9
-    Dim rate As Double
-    If total > 0 Then rate = cnt / total
+    Dim rate As Double, coverable As Long
+    coverable = total - deadCnt
+    If coverable > 0 Then rate = cnt / coverable
     ws.Range("A3").Value = "カバレッジ"
-    ws.Range("B3").Value = cnt & " / " & total & " 分岐 (" & Format(rate, "0.0%") & ")"
+    ws.Range("B3").Value = cnt & " / " & coverable & " 分岐 (" & Format(rate, "0.0%") & ")"
     ws.Range("B3").Font.Bold = True
+    If deadCnt > 0 Then
+        ws.Range("A4").Value = "※ 対象外（到達不能・未PERFORM の section） " & deadCnt & " 件は分母から除外（下表で灰色＝対象外）"
+        ws.Range("A4").Font.Color = RGB(120, 120, 120)
+        ws.Range("A4").Font.Size = 9
+    End If
 
     Dim hdr As Long
     hdr = 5
@@ -89,12 +100,18 @@ Private Sub RenderLegacyCoverage_(ByVal flow As OrderedDict)
     End With
 
     Dim row As Long, pass As Long, tok As String, isCov As Boolean
+    Dim isDead As Boolean, dsec2 As String, showRow As Boolean
     row = hdr + 1
-    For pass = 0 To 1   ' 未カバー first, then カバー済
+    ' pass 0 = 未カバー(実ギャップ・赤) / 1 = カバー済(緑) / 2 = 対象外(デッド・灰)
+    For pass = 0 To 2
         For Each a In arms
             tok = CStr(a.Item("Token"))
             isCov = covMap.Exists(tok)
-            If (pass = 0 And Not isCov) Or (pass = 1 And isCov) Then
+            isDead = (Not isCov) And DeadSection_(flow, tok, dsec2)
+            showRow = (pass = 0 And Not isCov And Not isDead) _
+                   Or (pass = 1 And isCov) _
+                   Or (pass = 2 And isDead)
+            If showRow Then
                 ws.Cells(row, 1).Value = tok
                 ws.Cells(row, 2).Value = ArmKind_(tok)
                 ws.Cells(row, 3).Value = CStr(a.Item("Disp"))
@@ -103,6 +120,10 @@ Private Sub RenderLegacyCoverage_(ByVal flow As OrderedDict)
                     ws.Cells(row, 5).Value = "カバー済"
                     ws.Cells(row, 5).Interior.Color = RGB(198, 239, 206)
                     ws.Cells(row, 6).Value = JoinColl_(covMap.Item(tok), ", ")
+                ElseIf isDead Then
+                    ws.Cells(row, 5).Value = "対象外｜デッドセクション（未PERFORM）：" & dsec2
+                    ws.Cells(row, 5).Interior.Color = RGB(217, 217, 217)
+                    ws.Cells(row, 5).Font.Color = RGB(89, 89, 89)
                 Else
                     ws.Cells(row, 5).Value = "未カバー" & DiagJp_(flow, tok)
                     ws.Cells(row, 5).Interior.Color = RGB(255, 199, 206)
@@ -346,6 +367,47 @@ Private Function DiagJp_(ByVal flow As OrderedDict, ByVal token As String) As St
     End If
 End Function
 
+' True only for the confidently-dead noctx sub-case: owning section known,
+' NO PERFORM caller in the call graph, AND no textual reference anywhere
+' (mirrors DiagJp_'s final else-branch). The "callers>0 = analysis gap" and
+' "refs>0" sub-cases are deliberately NOT dead - they stay red and counted,
+' since they may signal a tool gap to report. Sets secOut to the section name.
+Public Function DeadSection_(ByVal flow As OrderedDict, ByVal token As String, ByRef secOut As String) As Boolean
+    DeadSection_ = False
+    secOut = ""
+    If flow Is Nothing Then Exit Function
+    If Not flow.Exists("armDiag") Then Exit Function
+    Dim d As OrderedDict
+    Set d = flow.Item("armDiag")
+    If Not d.Exists(token) Then Exit Function
+    Dim c As String
+    c = CStr(d.Item(token))
+    If Left$(c, 5) <> "noctx" Then Exit Function
+    Dim nb As String, p1 As Long, p2 As Long, nSec As String, nCallers As String, nRefs As String
+    nb = Mid$(c, 7)
+    nRefs = ""
+    p1 = InStr(nb, "|")
+    If p1 > 0 Then
+        nSec = Left$(nb, p1 - 1)
+        nRefs = Mid$(nb, p1 + 1)
+        p2 = InStr(nRefs, "|")
+        If p2 > 0 Then
+            nCallers = Left$(nRefs, p2 - 1)
+            nRefs = Mid$(nRefs, p2 + 1)
+        Else
+            nCallers = nRefs
+            nRefs = ""
+        End If
+    Else
+        nSec = nb
+        nCallers = ""
+    End If
+    If Len(nSec) > 0 And Len(nCallers) = 0 And Len(nRefs) = 0 Then
+        DeadSection_ = True
+        secOut = nSec
+    End If
+End Function
+
 Private Function TermsNote_(ByVal flow As OrderedDict) As String
     Dim s As String
     If flow.Exists("termsApplied") Then
@@ -400,7 +462,7 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
         .Font.Size = 13
         .Font.Color = RGB(255, 255, 255)
     End With
-    ws.Range("A2").Value = "※ どのケースにも通過されない行（全空行）は赤 = 漏れ。恒真/恒偽の分岐（デッドコード）もここに現れます。"
+    ws.Range("A2").Value = "※ 赤 = カバー漏れ／恒真恒偽（値競合）。灰色 = 対象外＝未PERFORM の section（到達不能・分母から除外）。"
     ws.Range("A2").Font.Color = RGB(120, 120, 120)
     ws.Range("A2").Font.Size = 9
 
@@ -436,7 +498,7 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
 
     ' body: SECTION bands (A=名称 / C=備考の漢字名) + 検証Point rows
     Dim row As Long, a As OrderedDict, hit As Boolean, anyHit As Boolean, v As Variant
-    Dim secName As String, prevSec As String, blockStart As Long
+    Dim secName As String, prevSec As String, blockStart As Long, deadSec As String
     Dim blocks As Collection
     Set blocks = New Collection
     prevSec = ChrW$(1)    ' sentinel: no section yet
@@ -486,9 +548,15 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
             End If
         Next c
         If Not anyHit Then
-            ws.Range(ws.Cells(row, 1), ws.Cells(row, ncol)).Interior.Color = RGB(255, 199, 206)
-            ws.Cells(row, ncol + 1).Value = "未カバー" & DiagJp_(flow, CStr(a.Item("Token")))
-            ws.Cells(row, ncol + 1).Font.Color = RGB(192, 0, 0)
+            If DeadSection_(flow, CStr(a.Item("Token")), deadSec) Then
+                ws.Range(ws.Cells(row, 1), ws.Cells(row, ncol)).Interior.Color = RGB(217, 217, 217)
+                ws.Cells(row, ncol + 1).Value = "対象外｜デッドセクション（未PERFORM）：" & deadSec
+                ws.Cells(row, ncol + 1).Font.Color = RGB(120, 120, 120)
+            Else
+                ws.Range(ws.Cells(row, 1), ws.Cells(row, ncol)).Interior.Color = RGB(255, 199, 206)
+                ws.Cells(row, ncol + 1).Value = "未カバー" & DiagJp_(flow, CStr(a.Item("Token")))
+                ws.Cells(row, ncol + 1).Font.Color = RGB(192, 0, 0)
+            End If
         End If
         row = row + 1
     Next a

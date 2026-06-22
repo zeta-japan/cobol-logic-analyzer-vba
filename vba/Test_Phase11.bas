@@ -24,6 +24,39 @@ Public Sub Run_All()
     TestRunner.Run_One "Test_Flow_ArmMeta"
     TestRunner.Run_One "Test_Xdm_CondJp"
     TestRunner.Run_One "Test_Xdm_ActionJp"
+    TestRunner.Run_One "Test_CaseView_DeadSection"
+End Sub
+
+' DeadSection_ classifies an uncovered arm as a confidently-dead SECTION
+' (owning section known, NO PERFORM caller, NO textual reference) so the
+' coverage sheets show it out-of-scope (gray, excluded from the denominator)
+' instead of uncovered (red). The "callers>0 = analysis gap" and "refs>0"
+' sub-cases must NOT be classified dead - they stay red/counted as possible
+' tool gaps to report.
+Public Sub Test_CaseView_DeadSection()
+    Dim flow As OrderedDict, ad As OrderedDict, sec As String
+    Set flow = New OrderedDict
+    Set ad = New OrderedDict
+    ad.Add "t_dead", "noctx|S020-UPDATE||"
+    ad.Add "t_gap", "noctx|S020-UPDATE|CALLER-SEC|"
+    ad.Add "t_ref", "noctx|S020-UPDATE||L100:GO TO S020"
+    ad.Add "t_nosec", "noctx|||"
+    ad.Add "t_conflict", "conflict|W-X=ZERO|tried"
+    flow.Add "armDiag", ad
+
+    sec = "x"
+    TestRunner.Assert_True CobolCaseView.DeadSection_(flow, "t_dead", sec), "no caller + no ref -> dead"
+    TestRunner.Assert_Equal "S020-UPDATE", sec, "dead case returns the owning section name"
+    TestRunner.Assert_True Not CobolCaseView.DeadSection_(flow, "t_gap", sec), "callers>0 (analysis gap) is NOT dead"
+    TestRunner.Assert_True Not CobolCaseView.DeadSection_(flow, "t_ref", sec), "refs>0 (textual ref) is NOT dead"
+    TestRunner.Assert_True Not CobolCaseView.DeadSection_(flow, "t_nosec", sec), "empty section is NOT dead"
+    TestRunner.Assert_True Not CobolCaseView.DeadSection_(flow, "t_conflict", sec), "conflict diag is NOT dead"
+    TestRunner.Assert_True Not CobolCaseView.DeadSection_(flow, "t_missing", sec), "unknown token is NOT dead"
+
+    ' secOut is cleared on every call (set to "" before any classification)
+    Dim ok As Boolean
+    ok = CobolCaseView.DeadSection_(flow, "t_gap", sec)
+    TestRunner.Assert_Equal "", sec, "secOut cleared for a non-dead arm"
 End Sub
 
 ' the pattern draft now lists straight-line statements too; ActionJp_

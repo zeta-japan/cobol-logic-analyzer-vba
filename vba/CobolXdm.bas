@@ -31,6 +31,7 @@ Private mLoopDepth As OrderedDict
 ' PROCEDURE USING operands (= output/LINKAGE records); MOVEs writing to
 ' these are kept in the pattern draft (rebuilt per BuildPatternDraft run)
 Private mOutPrefixes As Collection
+Private mDeadToks As OrderedDict   ' arm tokens whose owning SECTION is never PERFORMed (dead); shown 対象外
 
 ' arm token -> id of the first covering case ("TC1", ...)
 Public Function BuildTcMap(ByVal flowR As OrderedDict) As OrderedDict
@@ -174,6 +175,18 @@ Public Sub BuildPatternDraft(ByVal flowR As OrderedDict, ByVal src As String)
 
     Dim tcMap As OrderedDict
     Set tcMap = BuildTcMap(flowR)
+
+    ' dead-section arms (owning SECTION never PERFORMed = unreachable): these
+    ' show 対象外 instead of 未カバー, matching the 分岐カバレッジ(表) sheets
+    Set mDeadToks = New OrderedDict
+    Dim da As OrderedDict, dDsec As String
+    If flowR.Exists("arms") Then
+        For Each da In flowR.Item("arms")
+            If CobolCaseView.DeadSection_(flowR, CStr(da.Item("Token")), dDsec) Then
+                If Not mDeadToks.Exists(CStr(da.Item("Token"))) Then mDeadToks.Add CStr(da.Item("Token")), dDsec
+            End If
+        Next da
+    End If
 
     ' inline-loop body indentation map (PERFORM UNTIL/VARYING/n TIMES ...
     ' END-PERFORM has no AST frame, so depth is derived from the raw lines)
@@ -354,6 +367,14 @@ Private Sub RenderBranch_(ByVal ws As Worksheet, ByRef row As Long, ByVal b As O
     End If
 End Sub
 
+' True when this arm token belongs to a dead (never-PERFORMed) SECTION; such
+' arms render 対象外 rather than 未カバー (mDeadToks is built in BuildPatternDraft).
+Private Function IsDeadTok_(ByVal token As String) As Boolean
+    IsDeadTok_ = False
+    If mDeadToks Is Nothing Then Exit Function
+    IsDeadTok_ = mDeadToks.Exists(token)
+End Function
+
 ' one arm = a condition row (番号 / 条件 / ケース / 行) followed by its body
 ' (rendered in source order one indent deeper); empty arms show 処理なし
 Private Sub RenderArm_(ByVal ws As Worksheet, ByRef row As Long, ByVal num As String, _
@@ -370,6 +391,10 @@ Private Sub RenderArm_(ByVal ws As Worksheet, ByRef row As Long, ByVal num As St
         ws.Cells(row, 4).Value = CStr(tcMap.Item(token))
         ws.Cells(row, 4).Font.Bold = True
         ws.Cells(row, 4).Font.Color = RGB(31, 78, 121)
+    ElseIf IsDeadTok_(token) Then
+        ws.Cells(row, 4).Value = "対象外"
+        ws.Cells(row, 4).Font.Color = RGB(120, 120, 120)
+        ws.Cells(row, 4).Font.Size = 9
     Else
         ws.Cells(row, 4).Value = "未カバー"
         ws.Cells(row, 4).Font.Color = RGB(192, 0, 0)
