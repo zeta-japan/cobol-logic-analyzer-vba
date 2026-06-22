@@ -18,6 +18,7 @@ Public Sub Run_All()
     TestRunner.Run_One "Test_Flow_ArithAndGoto"
     TestRunner.Run_One "Test_Flow_CallArgUnset"
     TestRunner.Run_One "Test_Flow_DeepAbendNormalCover"
+    TestRunner.Run_One "Test_Flow_TransitiveAbend"
     TestRunner.Run_One "Test_Flow_BlockerSteer"
     TestRunner.Run_One "Test_Flow_BlockerSteerEval"
     TestRunner.Run_One "Test_Flow_ArmMeta"
@@ -785,3 +786,77 @@ Private Function NormCovers_(ByVal flow As OrderedDict, ByVal token As String) A
         End If
     Next c
 End Function
+
+' transitive ABEND (ver3.7): ERRHND-SEC unconditionally PERFORMs the abend
+' section but is NOT named *ABEND*. It is PERFORM'd from CHECK-SEC which is
+' PERFORM'd early in PRE-SEC. Without transitive-terminator detection the
+' default walk takes CHECK's handler arm, dies, and blocks every downstream
+' arm (PRE's else, TAIL's then). Transitivity marks ERRHND-SEC a terminator
+' so abend-avoidance steers around it. Mirrors the real-program always-abend error-handler pattern.
+' Oracle BIGCASE10: 4 cases (2 normal + 2 abend), uncovered 0.
+Public Sub Test_Flow_TransitiveAbend()
+    Dim s As String
+    s = ""
+    s = s & "       WORKING-STORAGE SECTION." & vbLf
+    s = s & "       01  W-FLG   PIC X(01)." & vbLf
+    s = s & "       01  W-RC1   PIC X(01)." & vbLf
+    s = s & "       01  W-W     PIC X(01)." & vbLf
+    s = s & "       01  W-OUT   PIC X(02)." & vbLf
+    s = s & "       PROCEDURE DIVISION." & vbLf
+    s = s & "       MAIN-PROC SECTION." & vbLf
+    s = s & "       MAIN-000." & vbLf
+    s = s & "           PERFORM PRE-SEC." & vbLf
+    s = s & "           PERFORM TAIL-SEC." & vbLf
+    s = s & "           GOBACK." & vbLf
+    s = s & "       PRE-SEC SECTION." & vbLf
+    s = s & "       PRE-000." & vbLf
+    s = s & "           PERFORM CHECK-SEC." & vbLf
+    s = s & "           IF W-RC1 = '0'" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               MOVE 'OK' TO W-OUT" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               MOVE 999 TO W-OUT" & vbLf
+    s = s & "               PERFORM U-ABEND-PROC" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "       PRE-999." & vbLf
+    s = s & "           EXIT." & vbLf
+    s = s & "       CHECK-SEC SECTION." & vbLf
+    s = s & "       CHECK-000." & vbLf
+    s = s & "           IF W-FLG = '1'" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               PERFORM ERRHND-SEC" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               CONTINUE" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "       CHECK-999." & vbLf
+    s = s & "           EXIT." & vbLf
+    s = s & "       ERRHND-SEC SECTION." & vbLf
+    s = s & "       ERRHND-000." & vbLf
+    s = s & "           MOVE W-W TO W-OUT." & vbLf
+    s = s & "           PERFORM U-ABEND-PROC." & vbLf
+    s = s & "       ERRHND-999." & vbLf
+    s = s & "           EXIT." & vbLf
+    s = s & "       TAIL-SEC SECTION." & vbLf
+    s = s & "       TAIL-000." & vbLf
+    s = s & "           IF W-W = 'A'" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               MOVE 'AA' TO W-OUT" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               MOVE 'BB' TO W-OUT" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "       TAIL-999." & vbLf
+    s = s & "           EXIT." & vbLf
+    s = s & "       U-ABEND-PROC SECTION." & vbLf
+    s = s & "       UAB-000." & vbLf
+    s = s & "           CALL 'ERRSUB'." & vbLf
+    s = s & "       UAB-999." & vbLf
+    s = s & "           EXIT." & vbLf
+
+    Dim flow As OrderedDict
+    Set flow = CobolFlow.Analyze_Flow(s, New Collection)
+    TestRunner.Assert_Equal CLng(0), CLng(UncovCount_(flow)), "transitive-abend: every arm covered"
+    Dim tok As String
+    tok = ArmTokenByDisp_(flow, "IF W-W = 'A' [THEN]")
+    TestRunner.Assert_True Len(tok) > 0, "found the downstream TAIL arm"
+    TestRunner.Assert_True NormCovers_(flow, tok), "downstream arm reachable (handler no longer blocks it)"
+End Sub

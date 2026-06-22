@@ -150,6 +150,28 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
         End If
     Next ow
 
+    ' transitive terminators: a SECTION that unconditionally reaches a
+    ' terminator (a top-level PERFORM of a terminator, or GOBACK, before any
+    ' top-level branch) is itself a terminator - e.g. an error handler that
+    ' always PERFORMs the abend section. Without this, abend-avoidance walks
+    ' into such a PERFORM, dies, and blocks every downstream arm. Fixpoint.
+    Dim tChanged As Boolean, ow2 As OrderedDict, nmT As String
+    Do
+        tChanged = False
+        For Each ow2 In mOwners
+            If CStr(ow2.Item("kind")) = "section" Then
+                nmT = CStr(ow2.Item("name"))
+                If Not mTermSecs.Exists(nmT) Then
+                    If SectionAlwaysTerminates_(CLng(ow2.Item("line")), CLng(ow2.Item("secEnd"))) Then
+                        mTermSecs.Add nmT, True
+                        termsApplied.Add MakeTermInfo_(nmT, "auto")
+                        tChanged = True
+                    End If
+                End If
+            End If
+        Next ow2
+    Loop While tChanged
+
     BuildCut_
     BuildGroupMaps_ lines
     BuildCondItems_ mNodes
@@ -975,6 +997,42 @@ End Function
 
 ' default-arm preference: avoid the arm that runs straight into an ABEND
 ' terminator (top-level PERFORM of a registered/auto-detected terminator)
+' True if every path through a SECTION reaches a terminator: a top-level
+' PERFORM of a known terminator (or GOBACK / STOP RUN / EXIT PROGRAM) appears
+' before any top-level branch or jump-away. Sound for the common straight-line
+' "always-abend" error handler; returns False on a top-level branch (it might
+' fall through and return normally).
+Private Function SectionAlwaysTerminates_(ByVal lo As Long, ByVal hi As Long) As Boolean
+    SectionAlwaysTerminates_ = False
+    Dim nodes As Collection, n As OrderedDict, t As String, lbl As String, tgt As String, thru As String
+    Set nodes = RangeNodes_(lo, hi)
+    For Each n In nodes
+        t = CStr(n.Item("type"))
+        If t = "if" Or t = "evaluate" Or t = "search" Then
+            Exit Function   ' top-level branch - may return normally
+        ElseIf t = "action" Then
+            lbl = CStr(n.Item("label"))
+            If lbl = "GOBACK" Or Left$(lbl, 8) = "STOP RUN" Or Left$(lbl, 12) = "EXIT PROGRAM" Then
+                SectionAlwaysTerminates_ = True
+                Exit Function
+            End If
+            If Left$(lbl, 6) = "GO TO " Then
+                tgt = Trim$(Mid$(lbl, 7))
+                If InStr(tgt, " ") = 0 Then
+                    If mTermSecs.Exists(tgt) Then SectionAlwaysTerminates_ = True
+                End If
+                Exit Function   ' jump away - stop scanning either way
+            End If
+            If ParsePerform_(lbl, tgt, thru) Then
+                If mTermSecs.Exists(tgt) Then
+                    SectionAlwaysTerminates_ = True
+                    Exit Function
+                End If
+            End If
+        End If
+    Next n
+End Function
+
 Private Function BlockAbends_(ByVal list As Collection) As Boolean
     Dim n As OrderedDict, lbl As String
     BlockAbends_ = False
