@@ -88,6 +88,7 @@ Private mAnc As OrderedDict       ' item -> Collection of ancestor names
 Private mCondItems As OrderedDict ' identifiers used in any branch condition
 Private mSynth As OrderedDict     ' call target -> {Line, Target, ArmsAt}
 Private mCurEntrySec As String     ' entry name the current walk starts from (stamped on candidates for pass-2 replay)
+Private mEntryFallsThru As Boolean ' main entry has no GOBACK/STOP RUN/EXIT PROGRAM: reaching its end = implicit normal return
                                   ' (first site + the arm prefix at that point;
                                   '  pass 2 replays the prefix and stops at the call)
 Private mTruncated As Boolean
@@ -198,6 +199,14 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
     ' targeted fallback walk per still-uncovered arm (abends / steering).
     Dim entry As OrderedDict
     Set entry = FindEntry_()
+    ' scan the SAME range the top-level walk uses (CapHi_-capped, not the raw
+    ' secEnd) so a GOBACK in a performed paragraph past the cap does not hide
+    ' the fall-through of the actual main flow
+    mEntryFallsThru = False
+    If Not entry Is Nothing Then
+        mEntryFallsThru = Not LinesHaveNormalTerm_(lines, CLng(entry.Item("line")), _
+                              CapHi_(CLng(entry.Item("line")), CLng(entry.Item("secEnd"))))
+    End If
     Dim cands As Collection
     Set cands = New Collection
     Dim covered As OrderedDict
@@ -582,6 +591,11 @@ Private Function RunWalk_(ByVal entry As OrderedDict, ByVal secLabels As Ordered
     Set outs = ApplyRange_(CLng(entry.Item("line")), CLng(entry.Item("secEnd")), stack, seed, secLabels)
     If outs.Count > 0 Then
         Set RunWalk_ = outs(1)
+        ' main entry with no explicit terminator: reaching the end of the
+        ' top-level range is an implicit normal return (control falls off the
+        ' procedure division). Promote so normal cases generate and the sweep
+        ' keeps flowing instead of treating every fall-through as a dead walk.
+        If mEntryFallsThru And CStr(RunWalk_.Item("Term")) = "" Then RunWalk_.Add "Term", "goback"
     Else
         Set RunWalk_ = t0   ' walk died (no feasible arm) - Term "", dropped
     End If
@@ -1362,6 +1376,27 @@ Private Function FindEntry_() As OrderedDict
         End If
     Next o
     Set FindEntry_ = found
+End Function
+
+' True when [lo, hi] contains an explicit normal terminator (GOBACK / STOP RUN
+' / EXIT PROGRAM). When FALSE for the program's main entry, falling off the
+' end is an implicit normal return, so RunWalk_ promotes a Term="" top-level
+' walk to "goback" (else a bare-EXIT-ending program yields no normal cases and
+' every arm reads Œo˜H\’z•s‰Â).
+Private Function LinesHaveNormalTerm_(ByVal lines As Collection, ByVal lo As Long, ByVal hi As Long) As Boolean
+    LinesHaveNormalTerm_ = False
+    Dim le As OrderedDict, t As String, ln As Long
+    For Each le In lines
+        ln = CLng(le.Item("Number"))
+        If ln >= lo And ln <= hi Then
+            t = UCase$(Trim$(CStr(le.Item("Text"))))
+            If t = "GOBACK" Or t = "GOBACK." _
+               Or Left$(t, 8) = "STOP RUN" Or Left$(t, 12) = "EXIT PROGRAM" Then
+                LinesHaveNormalTerm_ = True
+                Exit Function
+            End If
+        End If
+    Next le
 End Function
 
 ' a unit/orphan walk that ran to the section's EXIT carries Term="" (no

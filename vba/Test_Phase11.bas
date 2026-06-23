@@ -26,6 +26,7 @@ Public Sub Run_All()
     TestRunner.Run_One "Test_Xdm_ActionJp"
     TestRunner.Run_One "Test_CaseView_DeadSection"
     TestRunner.Run_One "Test_Flow_OrphanEntry"
+    TestRunner.Run_One "Test_Flow_FallThroughEntry"
 End Sub
 
 ' DeadSection_ classifies an uncovered arm as a confidently-dead SECTION
@@ -122,6 +123,44 @@ Public Sub Test_Flow_OrphanEntry()
         Next e
     Next c
     TestRunner.Assert_True sawOrphan, "a generated case enters DEAD-UPD-SEC as a unit-test entry"
+End Sub
+
+' a main entry that ends with a bare EXIT (no GOBACK/STOP RUN) - a common
+' Natural-to-COBOL idiom - falls off the procedure division = implicit normal
+' return. Without the RunWalk_ promotion every normal walk has Term="" and is
+' dropped, leaving every arm flagged as a dead path (path-construction-
+' impossible). Here both IF arms must be covered by normal cases.
+Public Sub Test_Flow_FallThroughEntry()
+    Dim s As String
+    s = ""
+    s = s & "       WORKING-STORAGE SECTION." & vbLf
+    s = s & "       01  W-FLAG  PIC X(01)." & vbLf
+    s = s & "       01  W-X     PIC X(02)." & vbLf
+    s = s & "       PROCEDURE DIVISION." & vbLf
+    s = s & "       MAIN-PROC SECTION." & vbLf
+    s = s & "       MAIN-000." & vbLf
+    s = s & "           IF W-FLAG = '1'" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               MOVE '11' TO W-X" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               MOVE '22' TO W-X" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "       MAIN-999." & vbLf
+    s = s & "           EXIT." & vbLf
+
+    Dim flow As OrderedDict, noTerms As Collection
+    Set noTerms = New Collection
+    Set flow = CobolFlow.Analyze_Flow(s, noTerms)
+
+    TestRunner.Assert_Equal CLng(2), CLng(flow.Item("arms").Count), "fall-through entry: 2 IF arms"
+    TestRunner.Assert_Equal CLng(0), CLng(UncovCount_(flow)), _
+        "bare-EXIT entry: both arms covered (end-of-program = implicit normal return)"
+
+    Dim c As OrderedDict, hasNormal As Boolean
+    For Each c In flow.Item("cases")
+        If CStr(c.Item("kind")) = "normal" Then hasNormal = True
+    Next c
+    TestRunner.Assert_True hasNormal, "a NORMAL case is generated though there is no explicit GOBACK"
 End Sub
 
 ' the pattern draft now lists straight-line statements too; ActionJp_
