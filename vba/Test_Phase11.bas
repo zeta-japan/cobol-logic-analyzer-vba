@@ -25,6 +25,7 @@ Public Sub Run_All()
     TestRunner.Run_One "Test_Xdm_CondJp"
     TestRunner.Run_One "Test_Xdm_ActionJp"
     TestRunner.Run_One "Test_CaseView_DeadSection"
+    TestRunner.Run_One "Test_Flow_OrphanEntry"
 End Sub
 
 ' DeadSection_ classifies an uncovered arm as a confidently-dead SECTION
@@ -57,6 +58,70 @@ Public Sub Test_CaseView_DeadSection()
     Dim ok As Boolean
     ok = CobolCaseView.DeadSection_(flow, "t_gap", sec)
     TestRunner.Assert_Equal "", sec, "secOut cleared for a non-dead arm"
+End Sub
+
+' ver3.9 unit-test entries: DEAD-UPD-SEC is never PERFORMed (an orphan), but a
+' unit driver can PERFORM it directly, so its EVALUATE arms must get cases. The
+' main flow only reaches WORK-SEC; the 3 WHEN arms of DEAD-UPD-SEC are coverable
+' ONLY via the orphan-entry phase, so full coverage proves that phase ran. The
+' WHEN OTHER arm PERFORMs the ABEND section, exercising the orphan abend path.
+Public Sub Test_Flow_OrphanEntry()
+    Dim s As String
+    s = ""
+    s = s & "       WORKING-STORAGE SECTION." & vbLf
+    s = s & "       01  W-FLAG  PIC X(01)." & vbLf
+    s = s & "       01  W-X     PIC X(02)." & vbLf
+    s = s & "       01  W-RC    PIC X(01)." & vbLf
+    s = s & "       PROCEDURE DIVISION." & vbLf
+    s = s & "       MAIN-PROC SECTION." & vbLf
+    s = s & "       MAIN-000." & vbLf
+    s = s & "           PERFORM WORK-SEC." & vbLf
+    s = s & "           GOBACK." & vbLf
+    s = s & "       WORK-SEC SECTION." & vbLf
+    s = s & "       WORK-000." & vbLf
+    s = s & "           IF W-FLAG = '1'" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               MOVE '11' TO W-X" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               MOVE '22' TO W-X" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "       WORK-999." & vbLf
+    s = s & "           EXIT." & vbLf
+    s = s & "       DEAD-UPD-SEC SECTION." & vbLf
+    s = s & "       DEAD-000." & vbLf
+    s = s & "           CALL 'SUBR' USING W-RC." & vbLf
+    s = s & "           EVALUATE W-RC" & vbLf
+    s = s & "             WHEN ZERO" & vbLf
+    s = s & "               CONTINUE" & vbLf
+    s = s & "             WHEN '1'" & vbLf
+    s = s & "               CONTINUE" & vbLf
+    s = s & "             WHEN OTHER" & vbLf
+    s = s & "               PERFORM Z-ABEND-SEC" & vbLf
+    s = s & "           END-EVALUATE." & vbLf
+    s = s & "       DEAD-999." & vbLf
+    s = s & "           EXIT." & vbLf
+    s = s & "       Z-ABEND-SEC SECTION." & vbLf
+    s = s & "       Z-000." & vbLf
+    s = s & "           DISPLAY 'ABEND'." & vbLf
+    s = s & "           GOBACK." & vbLf
+
+    Dim flow As OrderedDict, noTerms As Collection
+    Set noTerms = New Collection
+    Set flow = CobolFlow.Analyze_Flow(s, noTerms)
+
+    TestRunner.Assert_True flow.Item("arms").Count >= 5, _
+        "orphan fixture exposes WORK IF (2) + DEAD-UPD EVALUATE (3) arms: " & flow.Item("arms").Count
+    TestRunner.Assert_Equal CLng(0), CLng(UncovCount_(flow)), _
+        "orphan-entry: every arm covered, incl. the never-PERFORMed DEAD-UPD-SEC"
+
+    ' prove the coverage came from entering DEAD-UPD-SEC directly (unit entry)
+    Dim c As OrderedDict, e As OrderedDict, sawOrphan As Boolean
+    For Each c In flow.Item("cases")
+        For Each e In c.Item("events")
+            If InStr(CStr(e.Item("Text")), "DEAD-UPD-SEC") > 0 Then sawOrphan = True
+        Next e
+    Next c
+    TestRunner.Assert_True sawOrphan, "a generated case enters DEAD-UPD-SEC as a unit-test entry"
 End Sub
 
 ' the pattern draft now lists straight-line statements too; ActionJp_

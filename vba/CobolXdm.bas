@@ -182,8 +182,12 @@ Public Sub BuildPatternDraft(ByVal flowR As OrderedDict, ByVal src As String)
     Dim da As OrderedDict, dDsec As String
     If flowR.Exists("arms") Then
         For Each da In flowR.Item("arms")
-            If CobolCaseView.DeadSection_(flowR, CStr(da.Item("Token")), dDsec) Then
-                If Not mDeadToks.Exists(CStr(da.Item("Token"))) Then mDeadToks.Add CStr(da.Item("Token")), dDsec
+            ' a now-covered arm (orphan unit-test entry) keeps its stale noctx
+            ' diag; the tcMap guard stops it being mislabeled �ΏۊO here
+            If Not tcMap.Exists(CStr(da.Item("Token"))) Then
+                If CobolCaseView.DeadSection_(flowR, CStr(da.Item("Token")), dDsec) Then
+                    If Not mDeadToks.Exists(CStr(da.Item("Token"))) Then mDeadToks.Add CStr(da.Item("Token")), dDsec
+                End If
             End If
         Next da
     End If

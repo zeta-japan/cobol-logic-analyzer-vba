@@ -81,11 +81,13 @@ Private mHavocItem As String
 Private mNodes As Collection      ' AST root nodes
 Private mOwners As Collection     ' {name,line,kind,ownerEnd,secEnd} sorted
 Private mCut As OrderedDict       ' plain-PERFORM target names
+Private mGotoCut As OrderedDict    ' GO TO target names (orphan-root exclusion only; never caps walk ranges)
 Private mTermSecs As OrderedDict  ' registered terminator section names
 Private mDesc As OrderedDict      ' item -> Collection of descendant names
 Private mAnc As OrderedDict       ' item -> Collection of ancestor names
 Private mCondItems As OrderedDict ' identifiers used in any branch condition
 Private mSynth As OrderedDict     ' call target -> {Line, Target, ArmsAt}
+Private mCurEntrySec As String     ' entry name the current walk starts from (stamped on candidates for pass-2 replay)
                                   ' (first site + the arm prefix at that point;
                                   '  pass 2 replays the prefix and stops at the call)
 Private mTruncated As Boolean
@@ -203,6 +205,7 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
     Dim w As OrderedDict
     If Not entry Is Nothing And mNodes.Count > 0 Then
         BuildArmCtx_ entry, secLabels
+        mCurEntrySec = CStr(entry.Item("name"))
         mRecordEvents = False
         mStopAtCall = ""
         Set mReplayList = Nothing
@@ -298,6 +301,44 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
                 End If
             End If
         Next a2
+
+        ' ver3.9 unit-test entries: a procedure SECTION the main flow never
+        ' PERFORMs (an "orphan" - e.g. an update-via-CALL path superseded by an
+        ' inline DB verb) is still unit-testable: a driver PERFORMs it directly
+        ' and stubs its CALLs, so its branches DO get cases. Walk each such
+        ' section as its own entry. Synth (CALL-failure) specs are frozen across
+        ' this phase, so orphan cases are normal + code-abend only, and each
+        ' carries its entry section for the pass-2 replay.
+        Dim oSec As OrderedDict, synthSnap As OrderedDict, r2 As Long
+        Dim ao As OrderedDict, tko As String
+        Set synthSnap = mSynth
+        For Each oSec In OrphanRoots_(entry)
+            If SecHasUncoveredArm_(oSec, arms, covered) Then
+                Set mSynth = New OrderedDict
+                mCurEntrySec = CStr(oSec.Item("name"))
+                BuildArmCtx_ oSec, secLabels
+                AddUnitCand_ cands, covered, WalkTo_("", False, oSec, secLabels)
+                AddUnitCand_ cands, covered, WalkTo_("", True, oSec, secLabels)
+                r2 = 0
+                Do
+                    If Not BuildSweepState_(arms, covered) Then Exit Do
+                    Set w = SweepWalk_(oSec, secLabels)
+                    If SweepGain_(w, covered) = 0 Then Exit Do
+                    AddUnitCand_ cands, covered, w
+                    r2 = r2 + 1
+                    If r2 > arms.Count Then Exit Do
+                Loop
+                For Each ao In arms
+                    tko = CStr(ao.Item("Token"))
+                    If Not covered.Exists(tko) And mArmCtx.Exists(tko) Then
+                        Set w = WalkTo_(tko, False, oSec, secLabels)
+                        If Not CBool(w.Item("Missed")) Then AddUnitCand_ cands, covered, w
+                    End If
+                Next ao
+            End If
+        Next oSec
+        Set mSynth = synthSnap
+        mCurEntrySec = CStr(entry.Item("name"))
     End If
     If mArmDiag Is Nothing Then Set mArmDiag = New OrderedDict
 
@@ -327,7 +368,20 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
         Else
             mStopAtCall = ""
         End If
-        Set w2 = ReplayWalk_(sp.Item("NeedList"), entry, secLabels)
+        Dim epSec As OrderedDict, eo As OrderedDict, spUnit As Boolean
+        Set epSec = entry
+        spUnit = False
+        If sp.Exists("EntrySec") Then
+            If CStr(sp.Item("EntrySec")) <> CStr(entry.Item("name")) Then
+                Set eo = OwnerByName_(CStr(sp.Item("EntrySec")))
+                If Not eo Is Nothing Then
+                    Set epSec = eo
+                    spUnit = True
+                End If
+            End If
+        End If
+        Set w2 = ReplayWalk_(sp.Item("NeedList"), epSec, secLabels)
+        If spUnit And CStr(w2.Item("Term")) = "" Then w2.Add "Term", "goback"
         cases.Add BuildCase_(w2, CStr(sp.Item("Id")), CStr(sp.Item("Kind")), CLng(sp.Item("KindSerial")))
     Next sp
     mStopAtCall = ""
@@ -1111,12 +1165,14 @@ End Sub
 
 Private Sub BuildCut_()
     Set mCut = New OrderedDict
+    Set mGotoCut = New OrderedDict
     CollectPerformTargets_ mNodes
 End Sub
 
 Private Sub CollectPerformTargets_(ByVal nodes As Collection)
     Dim n As OrderedDict, t As String
     Dim tgt As String, thru As String
+    Dim lbl As String, gt As String, gpos As Long
     For Each n In nodes
         t = CStr(n.Item("type"))
         If t = "action" Then
@@ -1124,6 +1180,17 @@ Private Sub CollectPerformTargets_(ByVal nodes As Collection)
             ' range, or the body would run twice on the same trace
             If ParsePerform_(CStr(n.Item("label")), tgt, thru) Then
                 If Not mCut.Exists(tgt) Then mCut.Add tgt, True
+            End If
+            ' GO TO targets: collected separately (orphan-root exclusion only,
+            ' never fed to mCut - that would wrongly cap walk ranges at them)
+            lbl = CStr(n.Item("label"))
+            If Left$(lbl, 6) = "GO TO " Then
+                gt = Trim$(Mid$(lbl, 7))
+                gpos = InStr(gt, " ")
+                If gpos > 0 Then gt = Left$(gt, gpos - 1)
+                If Len(gt) > 0 Then
+                    If Not mGotoCut.Exists(gt) Then mGotoCut.Add gt, True
+                End If
             End If
         ElseIf t = "if" Then
             CollectPerformTargets_ n.Item("thenChildren")
@@ -1295,6 +1362,55 @@ Private Function FindEntry_() As OrderedDict
         End If
     Next o
     Set FindEntry_ = found
+End Function
+
+' a unit/orphan walk that ran to the section's EXIT carries Term="" (no
+' GOBACK); for a SECTION under unit test that IS a normal return, so promote
+' it before AddCand_ (which would otherwise drop a terminator-less trace).
+Private Sub AddUnitCand_(ByVal cands As Collection, ByVal covered As OrderedDict, ByVal w As OrderedDict)
+    If w Is Nothing Then Exit Sub
+    If CStr(w.Item("Term")) = "" Then w.Add "Term", "goback"
+    AddCand_ cands, covered, w
+End Sub
+
+' procedure SECTIONs the main flow never PERFORMs - candidate unit-test entry
+' points. Excludes the entry itself, data-division sections, terminators, and
+' PERFORM targets (mCut); the last are reached transitively, so only true roots
+' are returned. The caller still gates on SecHasUncoveredArm_.
+Private Function OrphanRoots_(ByVal entrySec As OrderedDict) As Collection
+    Dim res As Collection, o As OrderedDict, nm As String
+    Set res = New Collection
+    For Each o In mOwners
+        If CStr(o.Item("kind")) = "section" Then
+            nm = CStr(o.Item("name"))
+            If Not IsDataSection_(nm) _
+               And nm <> CStr(entrySec.Item("name")) _
+               And Not mCut.Exists(nm) _
+               And Not mGotoCut.Exists(nm) _
+               And Not mTermSecs.Exists(nm) Then
+                res.Add o
+            End If
+        End If
+    Next o
+    Set OrphanRoots_ = res
+End Function
+
+' True when section [line, secEnd] owns at least one still-uncovered arm.
+Private Function SecHasUncoveredArm_(ByVal oSec As OrderedDict, ByVal arms As Collection, _
+                                     ByVal covered As OrderedDict) As Boolean
+    SecHasUncoveredArm_ = False
+    Dim lo As Long, hi As Long, a As OrderedDict, ln As Long
+    lo = CLng(oSec.Item("line"))
+    hi = CLng(oSec.Item("secEnd"))
+    For Each a In arms
+        ln = CLng(a.Item("Line"))
+        If ln >= lo And ln <= hi Then
+            If Not covered.Exists(CStr(a.Item("Token"))) Then
+                SecHasUncoveredArm_ = True
+                Exit Function
+            End If
+        End If
+    Next a
 End Function
 
 Private Function IsDataSection_(ByVal nm As String) As Boolean
@@ -1842,6 +1958,7 @@ End Function
 ' them covered (drives the sweep rounds and the fallback skip)
 Private Sub AddCand_(ByVal cands As Collection, ByVal covered As OrderedDict, ByVal w As OrderedDict)
     If CStr(w.Item("Term")) = "" Then Exit Sub
+    If Not w.Exists("EntrySec") Then w.Add "EntrySec", mCurEntrySec
     Dim al As Collection, v As Variant
     Set al = ConsToList_(w.Item("Arms"))
     w.Add "ArmsL", al
@@ -2857,6 +2974,7 @@ Private Function SelectCases_(ByVal normals As Collection, ByVal abends As Colle
         Set ab = New OrderedDict
         ab.Add "Kind", "abend"
         ab.Add "NeedList", tr.Item("ArmsL")
+        If tr.Exists("EntrySec") Then ab.Add "EntrySec", CStr(tr.Item("EntrySec"))
         ab.Add "SynthTarget", ""
         ab.Add "TriggerLine", CLng(tr.Item("TriggerLine"))
         abnormal.Add ab
@@ -2879,6 +2997,7 @@ Private Function SelectCases_(ByVal normals As Collection, ByVal abends As Colle
         sp.Add "Id", "TC" & serial
         sp.Add "KindSerial", normSerial
         sp.Add "NeedList", tr.Item("ArmsL")
+        If tr.Exists("EntrySec") Then sp.Add "EntrySec", CStr(tr.Item("EntrySec"))
         sp.Add "SynthTarget", ""
         cases.Add sp
     Next tr
