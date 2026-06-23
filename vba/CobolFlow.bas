@@ -83,6 +83,8 @@ Private mOwners As Collection     ' {name,line,kind,ownerEnd,secEnd} sorted
 Private mCut As OrderedDict       ' plain-PERFORM target names
 Private mGotoCut As OrderedDict    ' GO TO target names (orphan-root exclusion only; never caps walk ranges)
 Private mExecClears As OrderedDict ' EXEC line -> fields cleared by the literal MOVE right before it (DB-result pre-clear)
+Private mForce As Boolean          ' fallback: take a value-conflicted arm anyway (data-driven blocker - exists therefore testable)
+Private mForcedArm As OrderedDict   ' arm token -> the blocker condition that was force-satisfied (precondition mark)
 Private mTermSecs As OrderedDict  ' registered terminator section names
 Private mDesc As OrderedDict      ' item -> Collection of descendant names
 Private mAnc As OrderedDict       ' item -> Collection of ancestor names
@@ -248,6 +250,7 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
 
         Dim a As OrderedDict, tok As String
         Set mArmDiag = New OrderedDict
+        Set mForcedArm = New OrderedDict
         For Each a In arms
             tok = CStr(a.Item("Token"))
             If Not covered.Exists(tok) Then
@@ -258,25 +261,41 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
                     If CStr(w.Item("Term")) <> "" And Not CBool(w.Item("Missed")) Then
                         AddCand_ cands, covered, w
                     ElseIf CBool(w.Item("Missed")) And Len(mBlockCond) > 0 Then
-                        ' annotate what steering had to work with
-                        ' suffix considers the target arm AND the blocker
-                        ' (SteerChain_ already falls back to the unset site,
-                        ' so Nothing means no site exists for that key)
-                        Dim sfx As String, sk As Variant
-                        sfx = "nosteer"
-                        For Each sk In Array(tok, mBlockTok)
-                            If Len(CStr(sk)) > 0 Then
-                                If mArmSteer.Exists(CStr(sk)) Then
-                                    If Not SteerChain_(CStr(sk)) Is Nothing Then
-                                        sfx = "tried"
-                                        Exit For
-                                    ElseIf sfx = "nosteer" Then
-                                        sfx = "nosite"
+                        ' exists therefore testable: the blocker is an
+                        ' assignment-pinned value (often a DB/CALL result or a
+                        ' data-driven intermediate) the engine cannot satisfy via
+                        ' steering. Force the arm so the branch is covered, and
+                        ' remember the blocker condition as the case precondition
+                        ' (driver/DB must set it up).
+                        Dim blkCond As String, blkTok As String
+                        blkCond = mBlockCond
+                        blkTok = mBlockTok
+                        mForce = True
+                        Dim wFf As OrderedDict
+                        Set wFf = WalkTo_(tok, False, entry, secLabels)
+                        mForce = False
+                        If CStr(wFf.Item("Term")) <> "" And Not CBool(wFf.Item("Missed")) Then
+                            AddCand_ cands, covered, wFf
+                            If Not mForcedArm.Exists(tok) Then mForcedArm.Add tok, blkCond
+                        Else
+                            ' force failed too: annotate what steering had to work
+                            ' with (suffix considers the target arm AND the blocker)
+                            Dim sfx As String, sk As Variant
+                            sfx = "nosteer"
+                            For Each sk In Array(tok, blkTok)
+                                If Len(CStr(sk)) > 0 Then
+                                    If mArmSteer.Exists(CStr(sk)) Then
+                                        If Not SteerChain_(CStr(sk)) Is Nothing Then
+                                            sfx = "tried"
+                                            Exit For
+                                        ElseIf sfx = "nosteer" Then
+                                            sfx = "nosite"
+                                        End If
                                     End If
                                 End If
-                            End If
-                        Next sk
-                        mArmDiag.Add tok, "conflict|" & mBlockCond & "|" & sfx
+                            Next sk
+                            mArmDiag.Add tok, "conflict|" & blkCond & "|" & sfx
+                        End If
                     Else
                         mArmDiag.Add tok, "dead"
                     End If
@@ -440,6 +459,8 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
     result.Add "descMap", mDesc   ' item -> descendants (for downstream IO derivation)
     result.Add "termsApplied", termsApplied
     result.Add "armDiag", mArmDiag   ' uncovered-arm reason codes (matrix)
+    If mForcedArm Is Nothing Then Set mForcedArm = New OrderedDict
+    result.Add "forcedArms", mForcedArm   ' force-covered arm -> blocker condition (driver/DB must set up)
     If entry Is Nothing Then
         result.Add "entryName", ""
     Else
@@ -1965,6 +1986,8 @@ Private Function ApplyOne_(ByVal node As OrderedDict, ByVal stack As Collection,
                 If mNeed.Exists(tkT) Then
                     If okT Then
                         armSel = "T"
+                    ElseIf mForce Then
+                        armSel = "T"          ' force the value-conflicted arm
                     Else
                         mMissed = True
                         mMissCond = CStr(node.Item("condition"))
@@ -1974,6 +1997,8 @@ Private Function ApplyOne_(ByVal node As OrderedDict, ByVal stack As Collection,
                 ElseIf mNeed.Exists(tkE) Then
                     If okE Then
                         armSel = "E"
+                    ElseIf mForce Then
+                        armSel = "E"          ' force the value-conflicted arm
                     Else
                         mMissed = True
                         mMissCond = CStr(node.Item("condition"))
@@ -2695,7 +2720,7 @@ Private Sub ApplyEvaluate_(ByVal node As OrderedDict, ByVal stack As Collection,
     End If
     If selIdx = 0 And Not selSkip Then
         If needIdx > 0 Then
-            If WhenAllowed_(needIdx, cs, litAll, matchedIdx) Then
+            If WhenAllowed_(needIdx, cs, litAll, matchedIdx) Or mForce Then
                 selIdx = needIdx
             Else
                 mMissed = True

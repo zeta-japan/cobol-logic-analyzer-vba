@@ -28,6 +28,7 @@ Public Sub Run_All()
     TestRunner.Run_One "Test_Flow_OrphanEntry"
     TestRunner.Run_One "Test_Flow_FallThroughEntry"
     TestRunner.Run_One "Test_Flow_ExecResultEval"
+    TestRunner.Run_One "Test_Flow_ForceConflict"
 End Sub
 
 ' DeadSection_ classifies an uncovered arm as a confidently-dead SECTION
@@ -200,6 +201,38 @@ Public Sub Test_Flow_ExecResultEval()
         "EVALUATE W-RC exposes >=3 WHEN arms (" & flow.Item("arms").Count & ")"
     TestRunner.Assert_Equal CLng(0), CLng(UncovCount_(flow)), _
         "DB-result EVALUATE: WHEN 3 / OTHER covered once the EXEC frees the pre-cleared W-RC"
+End Sub
+
+' exists-therefore-testable: a value-conflict the engine cannot satisfy via
+' steering (W-RC pinned to 0 by a literal MOVE, the THEN needs 1, no other
+' setpoint) is force-covered instead of left as a red value-conflict, and the
+' blocker condition is recorded as the case precondition (driver must set it up).
+Public Sub Test_Flow_ForceConflict()
+    Dim s As String
+    s = ""
+    s = s & "       WORKING-STORAGE SECTION." & vbLf
+    s = s & "       01  W-RC    PIC 9(01)." & vbLf
+    s = s & "       01  W-X     PIC X(02)." & vbLf
+    s = s & "       PROCEDURE DIVISION." & vbLf
+    s = s & "       MAIN-PROC SECTION." & vbLf
+    s = s & "       MAIN-000." & vbLf
+    s = s & "           MOVE 0 TO W-RC." & vbLf
+    s = s & "           IF W-RC = 1" & vbLf
+    s = s & "           THEN" & vbLf
+    s = s & "               MOVE 'A' TO W-X" & vbLf
+    s = s & "           ELSE" & vbLf
+    s = s & "               MOVE 'B' TO W-X" & vbLf
+    s = s & "           END-IF." & vbLf
+    s = s & "           GOBACK." & vbLf
+
+    Dim flow As OrderedDict, noTerms As Collection
+    Set noTerms = New Collection
+    Set flow = CobolFlow.Analyze_Flow(s, noTerms)
+
+    TestRunner.Assert_Equal CLng(0), CLng(UncovCount_(flow)), _
+        "force-cover: the value-conflicted THEN (W-RC pinned 0, needs 1) is covered, not rejected"
+    TestRunner.Assert_True flow.Item("forcedArms").Count >= 1, _
+        "the forced arm is recorded as a driver-set precondition: " & flow.Item("forcedArms").Count
 End Sub
 
 ' the pattern draft now lists straight-line statements too; ActionJp_

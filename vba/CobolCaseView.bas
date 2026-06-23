@@ -117,9 +117,17 @@ Private Sub RenderLegacyCoverage_(ByVal flow As OrderedDict)
                 ws.Cells(row, 3).Value = CStr(a.Item("Disp"))
                 ws.Cells(row, 4).Value = CLng(a.Item("Line"))
                 If isCov Then
-                    ws.Cells(row, 5).Value = "カバー済"
-                    ws.Cells(row, 5).Interior.Color = RGB(198, 239, 206)
-                    ws.Cells(row, 6).Value = JoinColl_(covMap.Item(tok), ", ")
+                    Dim fcL As String
+                    fcL = ForcedCond_(flow, tok)
+                    If Len(fcL) > 0 Then
+                        ws.Cells(row, 5).Value = "カバー済｜要ドライバ設定"
+                        ws.Cells(row, 5).Interior.Color = RGB(255, 235, 156)
+                        ws.Cells(row, 6).Value = JoinColl_(covMap.Item(tok), ", ") & "（前提: " & fcL & "）"
+                    Else
+                        ws.Cells(row, 5).Value = "カバー済"
+                        ws.Cells(row, 5).Interior.Color = RGB(198, 239, 206)
+                        ws.Cells(row, 6).Value = JoinColl_(covMap.Item(tok), ", ")
+                    End If
                 ElseIf isDead Then
                     ws.Cells(row, 5).Value = "対象外｜デッドセクション（未PERFORM）：" & dsec2
                     ws.Cells(row, 5).Interior.Color = RGB(217, 217, 217)
@@ -162,6 +170,17 @@ Private Function ArmKind_(ByVal token As String) As String
     Else
         ArmKind_ = "branch"
     End If
+End Function
+
+' a force-covered arm (value-conflict on a data-driven blocker the engine took
+' anyway) returns the blocker condition the driver/DB must set up, else "".
+Private Function ForcedCond_(ByVal flow As OrderedDict, ByVal token As String) As String
+    ForcedCond_ = ""
+    If flow Is Nothing Then Exit Function
+    If Not flow.Exists("forcedArms") Then Exit Function
+    Dim fa As OrderedDict
+    Set fa = flow.Item("forcedArms")
+    If fa.Exists(token) Then ForcedCond_ = CStr(fa.Item(token))
 End Function
 
 Private Function JoinColl_(ByVal c As Collection, ByVal sep As String) As String
@@ -547,6 +566,14 @@ Private Sub RenderMatrix_(ByVal flow As OrderedDict)
                 anyHit = True
             End If
         Next c
+        If anyHit Then
+            Dim fcm As String
+            fcm = ForcedCond_(flow, CStr(a.Item("Token")))
+            If Len(fcm) > 0 Then
+                ws.Cells(row, ncol + 1).Value = "要ドライバ設定（前提: " & fcm & "）"
+                ws.Cells(row, ncol + 1).Font.Color = RGB(191, 143, 0)
+            End If
+        End If
         If Not anyHit Then
             If DeadSection_(flow, CStr(a.Item("Token")), deadSec) Then
                 ws.Range(ws.Cells(row, 1), ws.Cells(row, ncol)).Interior.Color = RGB(217, 217, 217)
