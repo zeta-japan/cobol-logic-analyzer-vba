@@ -82,6 +82,7 @@ Private mNodes As Collection      ' AST root nodes
 Private mOwners As Collection     ' {name,line,kind,ownerEnd,secEnd} sorted
 Private mCut As OrderedDict       ' plain-PERFORM target names
 Private mGotoCut As OrderedDict    ' GO TO target names (orphan-root exclusion only; never caps walk ranges)
+Private mExecClears As OrderedDict ' EXEC line -> fields cleared by the literal MOVE right before it (DB-result pre-clear)
 Private mTermSecs As OrderedDict  ' registered terminator section names
 Private mDesc As OrderedDict      ' item -> Collection of descendant names
 Private mAnc As OrderedDict       ' item -> Collection of ancestor names
@@ -154,6 +155,8 @@ Public Function Analyze_Flow(ByVal src As String, ByVal termSections As Collecti
     Next ow
 
     BuildCut_
+    Set mExecClears = New OrderedDict
+    BuildExecClears_ mNodes
 
     ' transitive terminators: a SECTION that unconditionally reaches a
     ' terminator (a top-level PERFORM of a terminator, or GOBACK, before any
@@ -1177,6 +1180,55 @@ Private Sub BuildOwners_(ByVal struct As OrderedDict)
     Next i
 End Sub
 
+' a literal MOVE (MOVE ZERO/literal TO f1 f2 ...) returns its target list f1 f2
+' ...; empty when the source is not a single literal. Used to spot the DB
+' response-code pre-clear that sits right before an EXEC.
+Private Function LiteralMoveTargets_(ByVal lbl As String) As String
+    LiteralMoveTargets_ = ""
+    If Left$(lbl, 5) <> "MOVE " Then Exit Function
+    Dim p As Long, src As String, lit As String
+    p = InStr(lbl, " TO ")
+    If p = 0 Then Exit Function
+    src = Trim$(Mid$(lbl, 6, p - 6))
+    If Not GetLiteral_(src, lit) Then Exit Function
+    LiteralMoveTargets_ = Trim$(Mid$(lbl, p + 4))
+End Function
+
+' map each EXEC ... END-EXEC node to the fields cleared by the literal MOVE
+' immediately before it (the DB response-code pre-clear idiom). The walk forgets
+' those fields' literal at the EXEC so a later branch on the DB result is
+' steerable. An EXEC with no preceding literal MOVE (field used directly) is NOT
+' recorded, so such sections behave exactly as before.
+Private Sub BuildExecClears_(ByVal nodes As Collection)
+    Dim i As Long, n As OrderedDict, prev As OrderedDict, t As String, lbl As String, cl As String
+    For i = 1 To nodes.Count
+        Set n = nodes(i)
+        t = CStr(n.Item("type"))
+        If t = "action" Then
+            lbl = CStr(n.Item("label"))
+            If Left$(lbl, 5) = "EXEC " And i > 1 Then
+                Set prev = nodes(i - 1)
+                If CStr(prev.Item("type")) = "action" Then
+                    cl = LiteralMoveTargets_(CStr(prev.Item("label")))
+                    If Len(cl) > 0 Then
+                        If Not mExecClears.Exists(CStr(n.Item("startLine"))) Then mExecClears.Add CStr(n.Item("startLine")), cl
+                    End If
+                End If
+            End If
+        ElseIf t = "if" Then
+            BuildExecClears_ n.Item("thenChildren")
+            BuildExecClears_ n.Item("elseChildren")
+        ElseIf t = "evaluate" Then
+            BuildExecClears_ n.Item("cases")
+        ElseIf t = "search" Then
+            BuildExecClears_ n.Item("atEndChildren")
+            BuildExecClears_ n.Item("cases")
+        ElseIf t = "when" Then
+            BuildExecClears_ n.Item("children")
+        End If
+    Next i
+End Sub
+
 Private Sub BuildCut_()
     Set mCut = New OrderedDict
     Set mGotoCut = New OrderedDict
@@ -2161,6 +2213,17 @@ Private Sub ApplyAction_(ByVal node As OrderedDict, ByVal stack As Collection, B
             ' fall through to the verb handlers below
         Case Else
             If Left$(lbl, 5) = "EXEC " Then
+                ' embedded DB/CICS call writes its result fields. If a literal
+                ' MOVE (the response-code pre-clear) sits right before this EXEC,
+                ' those fields are the DB results - forget their literal so a
+                ' later branch on the DB result can take any arm (stub sets it).
+                If mExecClears.Exists(CStr(ln)) Then
+                    Dim ecF() As String, eci As Long
+                    ecF = Split(CStr(mExecClears.Item(CStr(ln))), " ")
+                    For eci = LBound(ecF) To UBound(ecF)
+                        If Len(Trim$(ecF(eci))) > 0 Then Invalidate_ tr.Item("Env"), UCase$(Trim$(ecF(eci)))
+                    Next eci
+                End If
                 AddEvent_ tr, "exec", lbl, ln
             Else
                 AddEvent_ tr, "action", lbl, ln
@@ -2387,7 +2450,9 @@ Private Sub ApplyAction_(ByVal node As OrderedDict, ByVal stack As Collection, B
         Exit Sub
     End If
 
-    ' EXEC and anything else: generic event
+    ' EXEC and anything else: generic event (EXEC is normally handled by the
+    ' fast-dispatch Case Else above; this is the fallback for a listed verb that
+    ' fell through its handler)
     If Left$(lbl, 5) = "EXEC " Then
         AddEvent_ tr, "exec", lbl, ln
     Else

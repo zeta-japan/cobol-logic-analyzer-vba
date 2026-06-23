@@ -27,6 +27,7 @@ Public Sub Run_All()
     TestRunner.Run_One "Test_CaseView_DeadSection"
     TestRunner.Run_One "Test_Flow_OrphanEntry"
     TestRunner.Run_One "Test_Flow_FallThroughEntry"
+    TestRunner.Run_One "Test_Flow_ExecResultEval"
 End Sub
 
 ' DeadSection_ classifies an uncovered arm as a confidently-dead SECTION
@@ -161,6 +162,44 @@ Public Sub Test_Flow_FallThroughEntry()
         If CStr(c.Item("kind")) = "normal" Then hasNormal = True
     Next c
     TestRunner.Assert_True hasNormal, "a NORMAL case is generated though there is no explicit GOBACK"
+End Sub
+
+' a DB response code is pre-cleared (MOVE ZERO) then overwritten by an embedded
+' DB call (EXEC ... END-EXEC), then branched on. Without recognising the EXEC as
+' the writer, constant propagation pins the code at ZERO and the non-ZERO WHEN
+' arms read as a value-conflict. The pre-clear-before-EXEC is the writer signal, so the EXEC
+' forgets the literal and every WHEN becomes reachable (driver/stub sets it).
+Public Sub Test_Flow_ExecResultEval()
+    Dim s As String
+    s = ""
+    s = s & "       WORKING-STORAGE SECTION." & vbLf
+    s = s & "       01  W-RC    PIC 9(01)." & vbLf
+    s = s & "       01  W-X     PIC X(02)." & vbLf
+    s = s & "       PROCEDURE DIVISION." & vbLf
+    s = s & "       MAIN-PROC SECTION." & vbLf
+    s = s & "       MAIN-000." & vbLf
+    s = s & "           MOVE ZERO TO W-RC." & vbLf
+    s = s & "           EXEC SQL" & vbLf
+    s = s & "               SELECT COL1 INTO W-X FROM TBL" & vbLf
+    s = s & "           END-EXEC." & vbLf
+    s = s & "           EVALUATE W-RC" & vbLf
+    s = s & "             WHEN ZERO" & vbLf
+    s = s & "               CONTINUE" & vbLf
+    s = s & "             WHEN 3" & vbLf
+    s = s & "               CONTINUE" & vbLf
+    s = s & "             WHEN OTHER" & vbLf
+    s = s & "               MOVE 'NG' TO W-X" & vbLf
+    s = s & "           END-EVALUATE." & vbLf
+    s = s & "           GOBACK." & vbLf
+
+    Dim flow As OrderedDict, noTerms As Collection
+    Set noTerms = New Collection
+    Set flow = CobolFlow.Analyze_Flow(s, noTerms)
+
+    TestRunner.Assert_True flow.Item("arms").Count >= 3, _
+        "EVALUATE W-RC exposes >=3 WHEN arms (" & flow.Item("arms").Count & ")"
+    TestRunner.Assert_Equal CLng(0), CLng(UncovCount_(flow)), _
+        "DB-result EVALUATE: WHEN 3 / OTHER covered once the EXEC frees the pre-cleared W-RC"
 End Sub
 
 ' the pattern draft now lists straight-line statements too; ActionJp_
